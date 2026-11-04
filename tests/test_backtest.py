@@ -1,4 +1,4 @@
-"""事件回放的延迟、因果和账目行为测试。"""
+"""Behavior tests for event replay latency, causality, and accounting."""
 
 import unittest
 from dataclasses import replace
@@ -31,7 +31,7 @@ class BacktestTests(unittest.TestCase):
             requote_bps=10000, reward_two_sided=False, pickoff_enabled=False)
 
     def run_bt(self, trades=(), prices=(), end=10000, **changes):
-        # 预热提供双边可见成交，建立中心价；各测试只改变所关注的事件。
+        # Warm up with visible fills on both sides to establish the center; each test changes only its target events.
         seed = [ondo(0), ondo(0, side='sell', ident='seed-sell')]
         return run_backtest(seed + list(trades), [bn(0)] + list(prices),
                             replace(self.settings, **changes), symbol='INTC',
@@ -56,7 +56,7 @@ class BacktestTests(unittest.TestCase):
     def test_basis_uses_last_n_samples_median_without_time_window(self):
         result = self.run_bt([ondo(1000, '101'), ondo(2000, '102')],
                              end=60001, basis_samples=2)
-        # 最近两笔主动买的中位数为 101.5，主动卖中位数为 100。
+        # The median of the last two taker buys is 101.5; the taker sell median is 100.
         self.assertEqual(result['minutes'][-1]['center'], D('100.75'))
 
     def test_basis_pair_age_is_independent_of_reference_expiry(self):

@@ -1,4 +1,4 @@
-"""历史行情的事务存储、稳定排序与公开 GET 翻页。"""
+"""Transactional historical market-data storage, stable ordering, and public GET pagination."""
 
 import json
 import re
@@ -15,7 +15,7 @@ ONDO_API = 'https://api.ondoperps.xyz/v1/perps'
 
 
 def parse_time_ns(value):
-    """保留 ISO 时间的全部纳秒，不经过浮点时间戳。"""
+    """Preserve all nanoseconds in ISO timestamps without converting through floating-point timestamps."""
     try:
         match = re.fullmatch(r'(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(?:\.(\d{1,9}))?(Z|[+-]\d\d:\d\d)', value)
         if not match:
@@ -114,7 +114,7 @@ class HistoryStore:
                     PRIMARY KEY(source,market,channel,start_ms)
                 );
             ''')
-            # 写库时兼容历史表；只读打开不会修改旧数据库。
+            # Support legacy tables when writing; read-only access leaves old databases unchanged.
             for table in ('ondo_trades', 'binance_trades'):
                 columns = {row[1] for row in self.connection.execute(f'PRAGMA table_info({table})')}
                 if 'received_ms' not in columns:
@@ -131,7 +131,7 @@ class HistoryStore:
         self.connection.close()
 
     def upsert_ondo_trades(self, rows):
-        """同一成交保留最早已知接收时间，历史空值可由实采补全。"""
+        """Keep each trade's earliest known receipt time; live captures can fill missing historical values."""
         before = self.connection.total_changes
         with self.connection:
             self.connection.executemany('''INSERT INTO ondo_trades
@@ -244,7 +244,7 @@ class HistoryStore:
         return self.connection.total_changes - before
 
     def upsert_markets(self, payload, received_ms):
-        """原始历史与实采归档共用 markets 精度校验及存储。"""
+        """Share markets precision validation and storage between raw history and live capture archives."""
         try:
             pairs = payload['result']['perps']['tradingPairs']
             if payload.get('success') is not True or not isinstance(pairs, list):
@@ -314,7 +314,7 @@ class HistoryStore:
             yield row
 
     def upsert_collector_gaps(self, rows):
-        """关闭记录可补全已打开断档；重复或较旧记录不会重新打开断档。"""
+        """Closing records can complete open gaps; duplicate or older records cannot reopen them."""
         def values(row):
             try:
                 for key in ('source', 'market', 'channel', 'reason'):
@@ -339,7 +339,7 @@ class HistoryStore:
 
     def iter_collector_gaps(self, source=None, market=None, channel=None,
                             start_ms=None, end_ms=None):
-        """按来源、市场、频道精确筛选，并返回与半开窗口相交的断档。"""
+        """Filter by exact source, market, and channel, returning gaps that intersect the half-open window."""
         sql, params = 'SELECT * FROM collector_gaps WHERE 1=1', []
         for column, value in (('source', source), ('market', market), ('channel', channel)):
             if value is not None:
@@ -374,7 +374,7 @@ def _request_json(client, url, *, clock, sleep, request_interval_ms, max_retries
 def fetch_ondo_trades(client, market, start_ms, end_ms, store, *, clock=time.time,
                       sleep=time.sleep, request_interval_ms=200, max_retries=3,
                       limit=1000, base_url=ONDO_API):
-    """按半开窗口入库；失败保留已完成页面并返回可审计的覆盖记录。"""
+    """Store a half-open window; preserve completed pages on failure and return auditable coverage records."""
     for key, value in (('start_ms', start_ms), ('end_ms', end_ms),
                        ('request_interval_ms', request_interval_ms), ('max_retries', max_retries)):
         _integer(value, key)
@@ -439,7 +439,7 @@ def fetch_ondo_trades(client, market, start_ms, end_ms, store, *, clock=time.tim
 
 def fetch_contracts(client, store, *, clock=time.time, sleep=time.sleep,
                     request_interval_ms=200, max_retries=3, base_url=ONDO_API):
-    """保存整份合约快照及抓取结果。"""
+    """Save the complete contract snapshot and fetch result."""
     started = int(clock() * 1000)
     try:
         payload = _request_json(client, base_url + '/contracts', clock=clock, sleep=sleep,

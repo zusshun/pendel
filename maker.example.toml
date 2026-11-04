@@ -1,80 +1,80 @@
-# 先复制成 maker.toml。示例尚未标定，只能 dry-run 或 sandbox。
-# 金额单位 USD，偏移单位 bps；密钥不得直接放入此配置。
+# Copy to maker.toml first. This example is uncalibrated; use dry-run or sandbox only.
+# Amounts are in USD and offsets in bps; never put keys directly in this configuration.
 [maker]
-mode = "dry-run" # 仅完成沙盒和小资金验收后改为 live，并同时显式加 --live。
+mode = "dry-run" # Switch to live only after sandbox and small-capital acceptance checks; also pass --live explicitly.
 market = "IBM-USD.P"
-account = "default" # 同一账户所有命令必须使用相同标识，共用 flock 和熔断锁。
+account = "default" # All commands for the same account must share this identifier, flock, and halt lock.
 data_dir = "data/maker"
-# secret_file = "secrets/maker.json" # 选填，权限必须为 600；默认读取环境变量。
-# telegram_secret_file = "secrets/maker.json" # 选填，权限必须为 600；默认读取环境变量。
-healthcheck_url = "" # live 须填写 HTTPS 外部心跳地址，或明确设置下方放弃项；勿公开地址中的访问标识。
-healthcheck_waived = false # 默认不放弃。设为 true 可在无外部心跳时启动 live，并在启动及每小时摘要提醒风险。
-# 放弃后：服务器或网络整体故障时不会收到告警；死人开关会撤销挂单，但已有持仓无人处理。
-quote_notional = "400" # 每侧报价额；代码硬上限 800。
+# secret_file = "secrets/maker.json" # Optional; permissions must be 600. Defaults to environment variables.
+# telegram_secret_file = "secrets/maker.json" # Optional; permissions must be 600. Defaults to environment variables.
+healthcheck_url = "" # Live mode requires an external HTTPS heartbeat URL or the explicit waiver below; keep URL access tokens private.
+healthcheck_waived = false # Defaults to false. Set true to allow live mode without an external heartbeat; startup and hourly summaries flag the risk.
+# With the waiver, server or network outages produce no alerts; the dead man's switch cancels orders but leaves positions unmanaged.
+quote_notional = "400" # Quote amount per side; hard limit of 800 in code.
 soft_cap_usd = "300"
 hard_cap_usd = "600"
-max_position_usd = "1200" # 代码硬上限 1200。
-max_account_exposure_usd = "1200" # 代码硬上限 1500。
-max_margin_ratio = "0.3" # 待标定；交易所 marginRatio 量纲待沙盒核实。
-max_window_loss_usd = "25" # 待标定。
-emergency_flatten_loss_usd = "50" # 待标定。
+max_position_usd = "1200" # Hard limit of 1200 in code.
+max_account_exposure_usd = "1200" # Hard limit of 1500 in code.
+max_margin_ratio = "0.3" # Requires calibration; verify the exchange's marginRatio units in the sandbox.
+max_window_loss_usd = "25" # Requires calibration.
+emergency_flatten_loss_usd = "50" # Requires calibration.
 offset_bps = "12"
 skew_bps = "4"
 min_offset_bps = "8"
 band_bps = "25"
-band_margin_bps = "3" # 最大偏移 = 25 - 3 = 22。
+band_margin_bps = "3" # Maximum offset = 25 - 3 = 22.
 requote_bps = "3"
 min_requote_interval_s = 10.0
-anchor_max_age_s = 600.0 # 待标定。
-anchor_ema_tau_s = 120.0 # 短周期中心 EMA 的时间常数；停报期间继续跟踪实际 center。
-anchor_ema_alpha = "0.01" # 仅用于可选外部参考 basis 的平滑，不再控制中心 EMA。
-max_anchor_drift_bps = "15" # 待标定。
-slow_anchor_tau_s = 3600.0 # 实际 center 的超慢 EMA 时间尺度，守卫和停报期间继续更新。
-# 2026-11-04 09:34 UTC 服务器实测：IBM 约 1 小时从 248.95 涨到 251.77，真实移动约 110bps。
-max_slow_drift_bps = "150" # 中心价偏离超慢 EMA 超过此值时停报，容纳上述真实行情移动。
-max_mark_phase_drift_bps = "300" # 连续 mark 阶段只防灾难性累计漂移；自我引用的主要防线是 M14 的对称报价。
-max_ext_drift_bps = "20" # 待标定；币安仅作可选只读守卫。
-max_ext_age_s = 5.0 # 待标定。
-# 2026-11-04 08:4x UTC 服务器实测：非美股时段 IBM 在 90 秒内仅 9 次 mark 推送，最大间隔 14 秒。
-# markPricesPerps 只按价格变化推送；收到时源时间年龄中位数约 0 秒、最大 0.8 秒，静默不代表过期。
-mark_quiet_max_s = 60.0 # 该市场盘口在 max_book_age_s 内更新且公开连接健康时，最近 WS mark 接收时间最多静默 60 秒。
-mark_rest_confirm_s = 15.0 # 公开 REST 成功返回该市场当前值后，确认效力维持 15 秒，可独立确认标记价格有效。
-mark_rest_poll_after_s = 10.0 # WS mark 超过 10 秒未推送后开始 REST 轮询，避免按价变推送导致误停报。
-mark_rest_poll_interval_s = 10.0 # REST 使用独立低频节流，不签名、带 User-Agent，不占交易限速令牌。
-mark_source_max_age_s = 3600.0 # lastUpdatedTime 仅作合理性检查：早于墙钟超过 1 小时拒绝；超前 2 秒、缺失或无法解析也拒绝并告警。
-discovery_quiet_max_s = 300.0 # REST 无价格发现字段；公开连接健康时沿用最近 WS 明确布尔值最多 300 秒，true 或连接不健康立即停报。
-max_book_age_s = 5.0 # 服务器实测 IBM 盘口更新间隔 P90 0.26 秒、最大 3.2 秒（2026-11-04 工作日）
-narrow_spread_bps = "20" # 中间价转 mark 须超过此值；mark 转回中间价须不超过此值减 5；此值必须大于 5。
-source_min_dwell_s = 30.0 # 每次切换 center 来源后至少停留的秒数。
-max_mid_mark_bps = "8" # 使用第三方中间价时，偏离标记价格超过此值停报。
-max_spread_bps = "300" # 只阻止第三方价差异常扩大的极端市场。
-jump_window_s = 5.0 # 待标定。
-jump_bps = "15" # 待标定。
+anchor_max_age_s = 600.0 # Requires calibration.
+anchor_ema_tau_s = 120.0 # Time constant for the short-term center EMA; keep tracking the actual center while quoting is paused.
+anchor_ema_alpha = "0.01" # Smooths only the optional external-reference basis; no longer controls the center EMA.
+max_anchor_drift_bps = "15" # Requires calibration.
+slow_anchor_tau_s = 3600.0 # Time constant for the actual center's ultra-slow EMA; keep updating during guard pauses and quote suspensions.
+# Server observation at 2026-11-04 09:34 UTC: IBM rose from 248.95 to 251.77 in about an hour, a real move of roughly 110 bps.
+max_slow_drift_bps = "150" # Suspend quoting when the center deviates this far from the ultra-slow EMA; allows the observed market move above.
+max_mark_phase_drift_bps = "300" # Limits catastrophic cumulative drift during a continuous mark phase; M14 symmetric quotes are the main defense against self-reference.
+max_ext_drift_bps = "20" # Requires calibration; Binance is only an optional read-only guard.
+max_ext_age_s = 5.0 # Requires calibration.
+# Server observation at 2026-11-04 08:4x UTC: outside US equity hours, IBM sent only 9 mark updates in 90 seconds, with a 14-second maximum gap.
+# markPricesPerps pushes only on price changes; source age at receipt had a median near 0 seconds and a maximum of 0.8 seconds. Silence does not imply staleness.
+mark_quiet_max_s = 60.0 # Allow up to 60 seconds since the last WS mark if this market's book is within max_book_age_s and the public connection is healthy.
+mark_rest_confirm_s = 15.0 # A successful public REST response for the market confirms mark validity independently for 15 seconds.
+mark_rest_poll_after_s = 10.0 # Start REST polling after 10 seconds without a WS mark to avoid false pauses from change-only updates.
+mark_rest_poll_interval_s = 10.0 # REST uses separate low-frequency throttling, unsigned requests, and a User-Agent; it consumes no trading rate-limit tokens.
+mark_source_max_age_s = 3600.0 # Use lastUpdatedTime only as a sanity check: reject and alert if over 1 hour old, over 2 seconds ahead, missing, or unparseable.
+discovery_quiet_max_s = 300.0 # REST has no price-discovery field; reuse the last explicit WS boolean for up to 300 seconds on a healthy connection. True or an unhealthy connection pauses quotes immediately.
+max_book_age_s = 5.0 # IBM order book update intervals observed on the server: P90 0.26 seconds, maximum 3.2 seconds (weekday, 2026-11-04).
+narrow_spread_bps = "20" # Switch midpoint to mark above this value; switch back at or below this value minus 5. Must exceed 5.
+source_min_dwell_s = 30.0 # Minimum seconds to retain a center source after each switch.
+max_mid_mark_bps = "8" # Suspend quoting if a third-party midpoint deviates this far from the mark price.
+max_spread_bps = "300" # Blocks only extreme markets with abnormally wide third-party spreads.
+jump_window_s = 5.0 # Requires calibration.
+jump_bps = "15" # Requires calibration.
 gate_interval_s = 300.0
-gate_comp_max_usd = "3500" # 待按实盘规则重跑回测标定。
-gate_weight = "flat" # 支持 flat 或 linear，必须与回测 reward_weight 一致。
-cooldown_s = 60.0 # 待标定。
-stable_s = 30.0 # 待标定。
+gate_comp_max_usd = "3500" # Requires calibration by rerunning backtests with live trading rules.
+gate_weight = "flat" # Supports flat or linear; must match the backtest reward_weight.
+cooldown_s = 60.0 # Requires calibration.
+stable_s = 30.0 # Requires calibration.
 reconcile_interval_s = 30.0
-quiet_s = 3.0 # 无新成交 quiet 期；持仓两次一致后恢复。
+quiet_s = 3.0 # Quiet period without new fills; resume after two matching position checks.
 request_timeout_s = 5.0
-cancel_confirm_timeout_s = 10.0 # 待标定。
-rate_per_second = 1.0 # 公测按每 API key 每秒一次保守计算。
+cancel_confirm_timeout_s = 10.0 # Requires calibration.
+rate_per_second = 1.0 # Conservatively assume one request per second per API key during public beta.
 deadman_timeout_s = 30
-deadman_ack_timeout_s = 15.0 # 登录与死人开关 ACK 各自的最长等待时间。
-# 实测 ACK：频道、消息类型和嵌套超时秒数必须同时匹配配置。
+deadman_ack_timeout_s = 15.0 # Maximum wait for each login and dead man's switch ACK.
+# Observed ACK: channel, message type, and nested timeout seconds must all match the configuration.
 deadman_ack_match = { type = "subscribed", channel = "cancelAllOrdersAfterPerps", "data.timeout_seconds" = 30 }
-mark_channel = "markPricesPerps" # 待沙盒核实：频道名及消息格式，可留空禁用。
-binance_symbol = "IBMUSDT" # 外部独立参考，只做守卫，不参与定价；空字符串禁用参考价。
+mark_channel = "markPricesPerps" # Verify the channel name and message format in the sandbox; leave empty to disable.
+binance_symbol = "IBMUSDT" # Independent external reference used only as a guard, not for pricing; an empty string disables it.
 binance_ws_url = "wss://fstream.binance.com/market/stream?streams="
 prod_rest_url = "https://api.ondoperps.xyz"
 prod_ws_url = "wss://api.ondoperps.xyz/ws"
-sandbox_rest_url = "https://api.ondoperps-sandbox.xyz" # 待沙盒核实。
-sandbox_ws_url = "wss://api.ondoperps-sandbox.xyz/ws" # 待沙盒核实。
-guards_calibrated = false # 标定完成并记录依据后才能设 true。
-sandbox_verified = false # 全部沙盒和上线前验收通过后才能设 true。
-reduce_only_gtc_verified = false # 待沙盒核实；false 时使用受持仓数量约束的回退。
-window_start_day = 5 # 周一=0，周六=5。
+sandbox_rest_url = "https://api.ondoperps-sandbox.xyz" # Requires sandbox verification.
+sandbox_ws_url = "wss://api.ondoperps-sandbox.xyz/ws" # Requires sandbox verification.
+guards_calibrated = false # Set true only after calibration is complete and its rationale is documented.
+sandbox_verified = false # Set true only after all sandbox and pre-launch acceptance checks pass.
+reduce_only_gtc_verified = false # Requires sandbox verification; false uses a fallback capped by the position quantity.
+window_start_day = 5 # Monday=0, Saturday=5.
 window_start_time = "09:00"
 window_end_day = 0
 window_end_time = "05:00"
@@ -87,5 +87,5 @@ unknown_query_interval_s = 3.0
 unknown_timeout_s = 60.0
 strategy_interval_s = 1.0
 health_log_interval_s = 60.0
-log_level = "INFO" # DEBUG 可逐条记录标记价格和公开成交。
-# tick、baseIncrement、最小金额必须从市场元数据读取，禁止用示例固定值下单。
+log_level = "INFO" # DEBUG logs individual mark prices and public trades.
+# Read tick, baseIncrement, and minimum notional from market metadata; never place orders using fixed example values.

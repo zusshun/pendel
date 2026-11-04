@@ -1,4 +1,4 @@
-"""M23：订单意图标识字符约束与撤单、查询一致性；只用内存传输。"""
+"""M23: test order intent ID character constraints and cancellation/query consistency using in-memory transport."""
 
 import json
 import unittest

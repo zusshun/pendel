@@ -1,12 +1,12 @@
-# 第一版只录制公开行情和离线模拟，不接账户或密钥。
+# The first version records public market data and runs offline simulations, without accounts or keys.
 symbol = "INTC"
 ondo_market = "INTC-USD.P"
 poll_interval_s = 2.0
 http_timeout_s = 5.0
 depth = 50
 
-# 金额及费率可写成十进制字符串，避免浮点舍入。
-# Ondo 价格／数量步长目前是显式模拟假设，需自行核实。
+# Use decimal strings for amounts and rates to avoid floating-point rounding.
+# Ondo price and quantity steps are explicit simulation assumptions; verify them independently.
 quote_notional = "100"
 quote_offset_bps = "10"
 price_tick = "0.01"
@@ -24,12 +24,12 @@ max_loss_usd = "10"
 max_hedge_slippage_bps = "20"
 extra_slippage_bps = "1"
 
-# 1 bps = 0.01%；全部是情景假设，不代表历史实际费用。
+# 1 bps = 0.01%; all values are scenario assumptions, not actual historical fees.
 ondo_maker_fee_bps = "1"
 lighter_taker_fee_bps = "0"
-# 正数表示多头支付、空头收取；未模拟交易所实际结算时点。
+# Positive rates mean longs pay and shorts receive; actual exchange settlement times are not modeled.
 ondo_funding_bps_per_hour = "0"
 lighter_funding_bps_per_hour = "0"
 
-# 不填即未知。只有自行输入的奖励情景，绝非官方份额预测。
+# Omit for unknown rewards. This is a user-supplied scenario, not a prediction of the official reward share.
 # reward_usdc = "5"

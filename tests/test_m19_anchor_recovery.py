@@ -1,4 +1,4 @@
-"""M19：短周期锚按时间跟踪真实中心，停报后可自动恢复。"""
+"""M19: the short-period anchor tracks the real center over time and allows quoting to resume automatically."""
 
 import math
 import tempfile
@@ -102,7 +102,7 @@ class M19AnchorObservationTests(unittest.TestCase):
         self.assertTrue(self.evaluate(narrow=True).eligible)
         rejected = self.evaluate('100.2', mark='100', now=101, narrow=True)
         self.assertEqual(rejected.reason, '中间价与标记价格偏离超过阈值')
-        # 初始样本已过期；被中间价守卫拒绝的真实中心仍须参与跳变检查。
+        # The initial sample has expired; a real center rejected by the midpoint guard must still participate in jump checks.
         rejected = self.evaluate('100.4', now=106, narrow=True)
         self.assertFalse(rejected.eligible)
         self.assertEqual(rejected.reason, '中心价跳变')

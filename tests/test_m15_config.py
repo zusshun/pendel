@@ -1,4 +1,4 @@
-"""M15 标记价格静默、REST 确认和价格发现时效配置。"""
+"""M15 configuration for mark price silence, REST confirmation, and price discovery freshness."""
 
 import unittest
 from pathlib import Path

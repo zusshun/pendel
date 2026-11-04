@@ -1,4 +1,4 @@
-"""M13 中心来源按虚拟时钟累计，健康日志与摘要共享同一统计。"""
+"""M13 center source durations use a virtual clock; health logs and summaries share the same statistics."""
 
 import unittest
 from dataclasses import replace

@@ -1,4 +1,4 @@
-"""最终修复 D 的采集侧回归；墙钟变化与公开接口均由离线替身控制。"""
+"""Final batch D collector regressions with offline substitutes controlling wall-clock changes and public endpoints."""
 
 import asyncio
 import json

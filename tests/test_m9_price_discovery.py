@@ -1,4 +1,4 @@
-"""M9 价格发现状态必须由有效布尔字段持续确认；全部使用内存依赖。"""
+"""M9 price discovery state requires ongoing confirmation through valid boolean fields, using in-memory dependencies."""
 
 import asyncio
 import logging
@@ -205,7 +205,7 @@ class PriceDiscoveryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_missing_and_invalid_alerts_share_five_minute_merge(self):
         sent = []
-        # 隔离字段告警，避免撤单成功通知占用同一全局发送窗口。
+        # Isolate field alerts so successful cancellation notifications do not consume the same global send window.
         self.bot.settings = replace(self.settings, mode='dry-run')
         self.bot.engine.settings = self.bot.settings
 

@@ -1,4 +1,4 @@
-"""M16 标记价格按源时间单调接收；迟到消息不能延长有效期。"""
+"""M16 accepts mark prices in monotonic source-time order; late messages must not extend validity."""
 
 import asyncio
 import logging
@@ -81,7 +81,7 @@ class M16MarkOrderingTests(unittest.IsolatedAsyncioTestCase):
         self.healthy_book()
         await self.ws('100', source=old_source)
 
-        # 真实订单管理器调用发送前检查，模拟交易所不能受理复审中的卖价。
+        # The real order manager runs pre-send checks; the mock exchange must not accept the ask under review.
         order = self.bot.manager.create_intent(MARKET, 'sell', D(1), D('100.12'))
         await self.bot.manager.submit(order)
         self.assertEqual([call for call in self.exchange.calls if call[0] == 'place'], [])

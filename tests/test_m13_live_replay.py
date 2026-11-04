@@ -1,4 +1,4 @@
-"""M13 真实样本回放；删去近档的派生样本仅用于模拟宽价差与单侧市场。"""
+"""M13 real sample replay; derived samples omit nearby levels only to simulate wide spreads and one-sided markets."""
 
 import copy
 import json
@@ -57,7 +57,7 @@ class CenterLiveReplayTests(unittest.IsolatedAsyncioTestCase):
 
     @staticmethod
     def derived_depth(*, empty_side=None):
-        """派生样本：只删除真实样本两侧最靠近 mark 的两档，价格与量不作人工替换。"""
+        """Derived sample: remove only the two levels nearest the mark on each side; retain all original prices and quantities."""
         message = copy.deepcopy(sample('ws_depthBooksPerps'))
         row = message['data'][0]
         row['bids'] = row['bids'][2:]

@@ -1,4 +1,4 @@
-"""行情连接分别退避，日志脱敏并合并同一故障期的紧急告警。"""
+"""Back off feeds independently, redact logs, and merge urgent alerts within the same failure episode."""
 
 import logging
 import random
@@ -19,13 +19,13 @@ class ReconnectBackoff:
     def failed(self):
         self.connected_at = None
         self.failures += 1
-        # 限制指数的计算规模，长期断网不会构造不断增大的整数。
+        # Bound exponent computation so prolonged outages cannot build ever-larger integers.
         base = min(60, 3 * 2 ** min(self.failures - 1, 5))
         return min(60, base + random.uniform(-base * .2, base * .2))
 
 
 class ReconnectFailures:
-    """状态按来源独立；一个未恢复的故障期最多发一次 urgent。"""
+    """Track sources independently; send at most one urgent alert per unresolved failure episode."""
 
     def __init__(self, maker):
         self.maker = maker
@@ -61,7 +61,7 @@ class ReconnectFailures:
         if self.urgent_sources:
             self.urgent_sources.add(source)
         elif self.maker.settings.mode != 'dry-run' and state.failures >= 5:
-            # 在让出事件循环前锁定此故障期，避免三条连接同时产生重复告警。
+            # Lock this failure episode before yielding so three connections cannot send duplicate alerts.
             self.urgent_sources.update(self.latest)
             await self.maker.alerter.alert('行情连接连续失败：\n' + '\n'.join(self.latest.values()),
                                           key='行情重连连续失败', urgent=True)
@@ -69,7 +69,7 @@ class ReconnectFailures:
 
 
 def reconnect_failures(maker):
-    """三个消费协程共享告警合并状态，分别保留自己的退避计数。"""
+    """Share alert coalescing across three consumers while keeping independent backoff counts."""
     if not hasattr(maker, '_feed_reconnect'):
         maker._feed_reconnect = ReconnectFailures(maker)
     return maker._feed_reconnect

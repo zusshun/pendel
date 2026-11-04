@@ -1,4 +1,4 @@
-"""C2 质量事件与忽略分类的离线导入回归。"""
+"""C2 offline import regressions for quality events and ignored-record categories."""
 
 import contextlib
 import io

@@ -1,4 +1,4 @@
-"""M10 运行异常、行情日志降噪与配置标定回归；全部使用内存依赖。"""
+"""M10 regressions for runtime failures, market data log filtering, and configuration calibration using in-memory dependencies."""
 
 import asyncio
 import contextlib
@@ -182,5 +182,5 @@ class LoggingSettingsTests(unittest.TestCase):
     def test_example_book_age_uses_server_calibration(self):
         path = Path(__file__).parents[1] / 'maker.example.toml'
         self.assertEqual(MakerSettings.from_file(path).max_book_age_s, 5.0)
-        self.assertIn('服务器实测 IBM 盘口更新间隔 P90 0.26 秒、最大 3.2 秒（2026-11-04 工作日）',
+        self.assertIn('IBM order book update intervals observed on the server: P90 0.26 seconds, maximum 3.2 seconds (weekday, 2026-11-04).',
                       path.read_text(encoding='utf-8'))

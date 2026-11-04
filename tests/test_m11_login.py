@@ -1,4 +1,4 @@
-"""使用真实私有消息样本验证登录请求，不建立网络连接。"""
+"""Verify login requests using real private message samples without opening network connections."""
 
 import hashlib
 import hmac

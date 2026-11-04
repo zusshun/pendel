@@ -1,4 +1,4 @@
-# 复制到 /etc/systemd/system/pendle-collect.service 前替换用户和绝对路径。
+# Replace the user and absolute paths before copying to /etc/systemd/system/pendle-collect.service.
 [Unit]
 Description=Ondo 公开行情实时采集
 Wants=network-online.target
@@ -6,16 +6,16 @@ After=network-online.target
 
 [Service]
 Type=simple
-# 使用专用非 root 用户；请先创建并授予项目 data/ 与 log/ 的写权限。
+# Create a dedicated non-root user and grant write access to the project's data/ and log/ directories.
 User=pendle
 Group=pendle
-# 将 /PATH/TO/pendle 替换为实际项目目录，三处路径保持一致。
+# Replace /PATH/TO/pendle with the actual project directory in all three paths.
 WorkingDirectory=/PATH/TO/pendle
 ExecStart=/PATH/TO/pendle/.venv/bin/python -m pendle collect --config /PATH/TO/pendle/collect.toml
 Environment=PYTHONUNBUFFERED=1
 Restart=always
 RestartSec=5
-# 达到配置的磁盘上限后不自动重启；归档或调整上限后手动启动。
+# Do not restart automatically after reaching the disk limit; archive data or adjust the limit, then start manually.
 RestartPreventExitStatus=75
 KillSignal=SIGTERM
 TimeoutStopSec=90

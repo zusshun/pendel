@@ -1,4 +1,4 @@
-"""CLI 运行入口与网络适配器；测试必须注入传输以避免联网。"""
+"""CLI entry points and network adapters; tests must inject transports to avoid network access."""
 
 import asyncio
 import json as json_module
@@ -23,11 +23,11 @@ USER_AGENT = 'pendle-maker/0.1'
 
 
 class NetworkError(OSError):
-    """网络适配失败；错误文本不携带响应、URL 或认证信息。"""
+    """Network adapter failure; error text contains no response, URL, or credentials."""
 
 
 class FormatNetworkError(NetworkError):
-    """已收到 HTTP 响应，但响应头或正文格式无效。"""
+    """An HTTP response arrived with invalid headers or body format."""
 
     response_format = True
 
@@ -87,7 +87,7 @@ async def _in_thread(function, *args, **kwargs):
     try:
         return await asyncio.shield(task)
     except asyncio.CancelledError:
-        # urllib 所在线程不能被取消；保留在途状态直到真正结束，避免迟到写请求。
+        # The urllib thread cannot be cancelled; retain in-flight state until it ends to prevent late write requests.
         while not task.done():
             try:
                 await asyncio.shield(task)
@@ -101,7 +101,7 @@ async def _in_thread(function, *args, **kwargs):
 
 
 async def rest_transport(request, *, opener=None, timeout=10):
-    """只发送调用方签名后的精确正文，禁用全部重定向。"""
+    """Send the exact caller-signed body with all redirects disabled."""
     headers = {key: value for key, value in request.headers.items()
                if key.lower() != 'user-agent'}
     headers['User-Agent'] = USER_AGENT
@@ -111,7 +111,7 @@ async def rest_transport(request, *, opener=None, timeout=10):
 
 
 async def public_http(method, url, *, json=None, timeout=10, opener=None):
-    """公开行情专用 GET；要求 JSON，限制响应大小并禁止重定向。"""
+    """GET for public market data only; require JSON, cap response size, and reject redirects."""
     if method != 'GET' or json is not None:
         raise NetworkError('公开行情 HTTP 仅允许无正文 GET')
     return await _in_thread(_sync_http, method, url, headers={
@@ -120,7 +120,7 @@ async def public_http(method, url, *, json=None, timeout=10, opener=None):
 
 
 async def alert_http(method, url, *, json=None, timeout=10, opener=None):
-    """Telegram POST 与健康心跳 GET；不记录敏感地址或正文。"""
+    """Telegram POST and health heartbeat GET; never log sensitive URLs or bodies."""
     if method not in ('GET', 'POST') or method == 'GET' and json is not None:
         raise NetworkError('告警 HTTP 方法或正文无效')
     try:
@@ -134,7 +134,7 @@ async def alert_http(method, url, *, json=None, timeout=10, opener=None):
 
 
 async def websocket_connect(url, *, gate=None, **kwargs):
-    """惰性导入可选依赖；闸门关闭立即中断连接，阻止自动 pong 或 close 续期。"""
+    """Import the optional dependency lazily; a closed gate aborts connections to prevent automatic pongs or close frames from renewing liveness."""
     parts = urlsplit(url)
     if parts.scheme != 'wss' or not parts.hostname or parts.username or parts.password or parts.fragment:
         raise NetworkError('WebSocket 地址无效')
@@ -158,7 +158,7 @@ async def websocket_connect(url, *, gate=None, **kwargs):
             status = getattr(error, 'status_code', None)
         if type(status) is int and 100 <= status <= 599 and f'HTTP {status}' not in detail:
             detail = f'HTTP {status}：{detail}'
-        # 对外异常保持通用文本；内部诊断必须经过 MakerSecretFilter 后才能记录。
+        # Keep public errors generic; internal diagnostics must pass through MakerSecretFilter before logging.
         failure._ws_diagnostic = (type(error).__name__, detail)
         raise failure from None
     if gate is not None:
@@ -229,7 +229,7 @@ def _build_alerter(settings, dependencies):
 
 
 class MakerSecretFilter(logging.Filter):
-    """统一遮蔽 API、Telegram 与签名，并丢弃异常自由文本。"""
+    """Redact API and Telegram credentials and signatures, and discard free-form exception text."""
 
     def __init__(self, credentials=None, alerter=None, *, secrets=()):
         super().__init__()
@@ -251,7 +251,7 @@ class MakerSecretFilter(logging.Filter):
 
 
 def _configure_logger(settings, dependencies, *, api=None, alerter=None):
-    """启动前即可配置文件和标准错误输出，组装失败同样留下脱敏原因。"""
+    """Configure file and stderr logging before startup so assembly failures also leave redacted diagnostics."""
     logger = dependencies.get('logger')
     if logger is None:
         logger = logging.getLogger('pendle.maker.' + settings.account)
@@ -289,7 +289,7 @@ def _configure_logger(settings, dependencies, *, api=None, alerter=None):
 
 
 def build_maker(settings, **dependencies):
-    """组装依赖，不建立网络连接；实际启动由 Maker.run 执行。"""
+    """Assemble dependencies without network connections; Maker.run performs startup."""
     from .maker import Maker
     api, alerter = _build_api(settings, dependencies), _build_alerter(settings, dependencies)
     gate = api.gate if api is not None else dependencies.get('gate', SendGate())
@@ -386,10 +386,10 @@ def _emergency(settings, *, reset=False, **dependencies):
 
 
 def run_cancel_all(settings, **dependencies):
-    """持有账户实例锁，最多三轮全部撤单并完整确认零挂单；不启动 WS。"""
+    """Hold the account instance lock, cancel all for at most three rounds, and confirm no open orders; do not start WS."""
     return _emergency(settings, **dependencies)
 
 
 def reset_halt(settings, **dependencies):
-    """人工确认后执行：撤单确认零挂单，才删除熔断锁并同步父目录。"""
+    """Run after manual confirmation: cancel orders and confirm none remain before deleting the halt lock and syncing its parent directory."""
     return _emergency(settings, reset=True, **dependencies)

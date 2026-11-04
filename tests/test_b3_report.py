@@ -1,4 +1,4 @@
-"""B3 奖励误差、延后估计及套利吃单披露的回归测试。"""
+"""B3 regression tests for reward errors, delayed estimates, and arbitrage taker disclosures."""
 
 import unittest
 from dataclasses import replace

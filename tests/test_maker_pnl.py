@@ -1,4 +1,4 @@
-"""窗口盈亏按成交时间归属，REST 补账水位不能被 WS 提前推进。"""
+"""Assign window P&L by fill time; WS updates must not advance the REST backfill watermark."""
 
 import unittest
 from dataclasses import replace

@@ -1,4 +1,4 @@
-"""M14 来源滞后、无偏移报价及百分之百盘口反馈压力回归。"""
+"""M14 regressions for source hysteresis, zero-offset quotes, and full order book feedback stress."""
 
 import unittest
 from copy import copy
@@ -88,7 +88,7 @@ class M14CenterTests(unittest.TestCase):
         for elapsed in range(0, 3601, 10):
             now = 100+elapsed
             if previous:
-                # 压力模型没有外部价格混合项：mark 完全跟随我方双边报价中点。
+                # The stress model has no external price component: the mark follows our two-sided quote midpoint entirely.
                 mark = sum((q.price for q in previous), D(0))/2
             self.engine.mark = (mark, now)
             self.engine.in_price_discovery = False
@@ -221,7 +221,7 @@ class M14SourceRequoteTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.remote, before)
 
     async def test_one_bps_source_switch_keeps_compliant_pair_without_cancel(self):
-        # 已进入 mark 后须降到 15bps 才真正切回。
+        # After switching to the mark, the spread must fall to 15bps before switching back.
         await self.source_transition('99.94', '100.08', 'third_party_mid', '100.01')
 
     async def test_review_twenty_bps_book_does_not_switch_or_cancel_mark_quotes(self):

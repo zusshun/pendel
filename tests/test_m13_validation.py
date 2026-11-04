@@ -1,4 +1,4 @@
-"""M13 的 mark 中心复用 M6 统一复核：旧单与同价同剩量意图结论一致。"""
+"""M13 mark-based centers reuse M6 validation: existing orders match intents at the same price and remaining quantity."""
 
 import unittest
 from dataclasses import replace

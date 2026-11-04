@@ -1,4 +1,4 @@
-"""实盘做市配置；示例参数未标定时禁止进入正式交易。"""
+"""Live market-making configuration; uncalibrated example parameters cannot enter live trading."""
 
 import math
 import re
@@ -38,7 +38,7 @@ def _url(value, name, scheme):
 
 @dataclass(frozen=True)
 class MakerSettings:
-    """首版只支持单市场；所有安全门槛都在构造时校验。"""
+    """The first version supports one market only; validate every safety threshold at construction."""
 
     market: str = 'IBM-USD.P'
     mode: str = 'dry-run'
@@ -65,17 +65,17 @@ class MakerSettings:
     min_requote_interval_s: float = 10.0
     anchor_max_age_s: float = 600.0
     anchor_ema_tau_s: float = 120.0
-    # 仅保留给外部参考 basis 的平滑；短周期中心 EMA 改用时间常数。
+    # Retained only for smoothing the external reference basis; the short center-price EMA now uses a time constant.
     anchor_ema_alpha: Decimal = Decimal('.01')
     max_anchor_drift_bps: Decimal = Decimal('15')
     slow_anchor_tau_s: float = 3600.0
-    # 2026-11-04 实测 IBM 1 小时真实移动约 110bps。
+    # Observed on 2026-11-04: IBM moved about 110 bps in one hour.
     max_slow_drift_bps: Decimal = Decimal('150')
-    # 只防灾难性累计漂移；自我引用的主要防线是 M14 的对称报价。
+    # Guard only against catastrophic cumulative drift; M14 symmetric quotes are the main defense against self-reference.
     max_mark_phase_drift_bps: Decimal = Decimal('300')
     max_ext_drift_bps: Decimal = Decimal('20')
     max_ext_age_s: float = 5.0
-    # 标记价格按价变推送；接收静默、REST 确认和源时间合理性分别判断。
+    # Marks are pushed on price changes; assess receipt silence, REST confirmation, and source-time sanity separately.
     mark_quiet_max_s: float = 60.0
     mark_rest_confirm_s: float = 15.0
     mark_rest_poll_after_s: float = 10.0
@@ -174,7 +174,7 @@ class MakerSettings:
                 and match['type'] == 'subscribed'
                 and match['channel'] == 'cancelAllOrdersAfterPerps'
                 and type(match['data.timeout_seconds']) is int):
-            # 默认规则始终随超时配置变化，重建配置时也不遗留旧值。
+            # Default rules always follow timeout settings, including when rebuilding the configuration.
             match = {**match, 'data.timeout_seconds': self.deadman_timeout_s}
         if (not isinstance(match, Mapping) or not match
                 or any(not isinstance(key, str) or not key

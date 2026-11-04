@@ -1,4 +1,4 @@
-"""M24：真实私有订单样本经组装器、签名队列与核零流程回归。"""
+"""M24: regressions using real private order samples through the builder, signing queue, and verification of zero open orders."""
 
 from copy import deepcopy
 from decimal import Decimal as D

@@ -1,4 +1,4 @@
-"""批次 D 的实采接收时间、旧库迁移和精度来源回归。"""
+"""Batch D regressions for receive times in collected data, legacy database migration, and precision sources."""
 
 import json
 import sqlite3

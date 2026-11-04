@@ -1,4 +1,4 @@
-"""M11 重连退避、故障日志和紧急告警使用纯内存连接验证。"""
+"""M11 tests for reconnect backoff, failure logs, and emergency alerts using in-memory connections."""
 
 import asyncio
 import json

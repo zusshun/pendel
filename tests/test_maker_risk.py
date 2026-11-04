@@ -1,4 +1,4 @@
-"""实盘风险模块只使用内存时钟与文件系统。"""
+"""Test live risk controls using only an in-memory clock and filesystem."""
 
 import asyncio
 import errno
@@ -28,7 +28,7 @@ class ExposureTests(unittest.TestCase):
 
     def check(self, *, markets=None, orders=(), side='buy', quantity='1', price='100',
               equity='1000', available='1000', limits=None, reduce_only=False):
-        # 这些用例独立验证持仓、账户与保证金边界，避免先被默认 600 美元硬上限截断。
+        # Test position, account, and margin boundaries independently without first hitting the default $600 hard limit.
         return risk.RiskManager(limits or risk.RiskLimits(hard_cap_usd=D('1200'))).check_order(
             'IBM', side, D(quantity), D(price), markets or [self.market()], orders,
             D(equity), D(available), reduce_only=reduce_only)
@@ -172,7 +172,7 @@ class ExposureTests(unittest.TestCase):
 
 
 class MemoryFS:
-    """模拟 open/write/fsync/rename/flock，不触碰真实文件系统。"""
+    """Simulate open/write/fsync/rename/flock without accessing the real filesystem."""
 
     def __init__(self):
         self.files, self.handles, self.events, self.locks = {}, {}, [], set()
@@ -810,7 +810,7 @@ class WatchdogTests(unittest.IsolatedAsyncioTestCase):
         await entered.wait()
         self.clock.now = 16
         timer.set()
-        # 若实现仍在无界等待 ping，用事件循环让测试给出明确断言后再收尾。
+        # If the implementation still waits indefinitely for ping, run the event loop to reach an explicit assertion before cleanup.
         for _ in range(10):
             await asyncio.sleep(0)
         try:

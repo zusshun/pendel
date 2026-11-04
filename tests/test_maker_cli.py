@@ -1,4 +1,4 @@
-"""命令行模式必须双重确认实盘，并能进行人工应急操作。"""
+"""CLI mode must require two live-trading confirmations and support manual emergency actions."""
 
 import contextlib
 import io

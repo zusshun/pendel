@@ -1,4 +1,4 @@
-"""Telegram 告警和外部健康心跳；HTTP 由调用方注入。"""
+"""Telegram alerts and external health heartbeats with caller-injected HTTP."""
 
 import asyncio
 import json
@@ -29,7 +29,7 @@ class TelegramCredentials:
 
 
 def load_telegram_credentials(*, env=None, secret_file=None, file_reader=_read_secret_file):
-    """读取环境变量或与 Ondo 共用的权限 600 JSON 密钥文件。"""
+    """Read environment variables or the mode-600 JSON credentials file shared with Ondo."""
     env = os.environ if env is None else env
     if secret_file is None:
         return TelegramCredentials(env.get('TELEGRAM_BOT_TOKEN'), env.get('TELEGRAM_CHAT_ID'))
@@ -44,7 +44,7 @@ def load_telegram_credentials(*, env=None, secret_file=None, file_reader=_read_s
 
 
 class Alerter:
-    """时间参数均使用 monotonic 同一时基；没有 HTTP 时安全失败。"""
+    """Use one monotonic time base for all timings; fail safely without HTTP."""
 
     def __init__(self, credentials=None, *, http=None, monotonic=time.monotonic,
                  healthcheck_url=None, logger=None):
@@ -96,16 +96,16 @@ class Alerter:
         return success
 
     async def self_test(self):
-        """live 启动方必须检查返回值，失败时拒绝启动。"""
+        """Live startup must check the result and refuse to start on failure."""
         return await self._telegram('实盘做市告警通道自检')
 
     async def alert(self, reason, *, key=None, urgent=False):
-        """普通告警仅入队，返回是否启动发送；紧急告警等待独立的 HTTP。"""
+        """Queue regular alerts and report whether sending started; await separate HTTP for urgent alerts."""
         if urgent:
             task = asyncio.create_task(self._telegram('紧急告警：' + str(reason)))
             self._urgent_tasks[task] = self._monotonic() + 10
             task.add_done_callback(lambda completed: self._urgent_tasks.pop(completed, None))
-            # wait 超时或调用者取消都不取消 HTTP；退出清理沿用同一个截止时间。
+            # A wait timeout or caller cancellation leaves HTTP running; shutdown uses the same deadline.
             done, _ = await asyncio.wait((task,), timeout=10)
             return task.result() if done else False
         self._pending[str(key if key is not None else reason)] = str(reason)
@@ -125,7 +125,7 @@ class Alerter:
             self.logger.warning('后台告警发送异常')
 
     async def flush_urgent(self, *, timeout_s=10):
-        """退出前等待紧急 HTTP 的剩余预算，不重复等待已耗尽的十秒。"""
+        """Wait for urgent HTTP within its remaining shutdown budget, without restarting the ten-second timeout."""
         await asyncio.sleep(0)
         tasks = tuple(self._urgent_tasks)
         if not tasks:
@@ -153,11 +153,11 @@ class Alerter:
             success = await self._telegram('做市告警：\n' + '\n'.join(batch.values()))
         finally:
             if not success:
-                # 只恢复此批次，发送期间同 key 的较新内容始终优先。
+                # Restore only this batch; newer content for the same key always takes precedence.
                 self._pending = {**batch, **self._pending}
 
     async def observe(self, *, healthy, waiting, qualified, last_quote, summary=None):
-        """策略周期调用；waiting 必须来自可解释的明确等待状态。"""
+        """Call each strategy cycle; waiting must reflect an explicit, explainable wait state."""
         now = self._monotonic()
         if self._started is None:
             self._started = self._last_summary = now

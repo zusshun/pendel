@@ -1,4 +1,4 @@
-"""命令行入口与无需网络的演示场景。"""
+"""Command-line entry point and offline demo scenarios."""
 
 import argparse
 import json

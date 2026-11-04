@@ -1,4 +1,4 @@
-"""M7：明确放弃外部心跳后仍须持续披露风险。"""
+"""M7: continue disclosing risk after an explicit external heartbeat opt-out."""
 
 import asyncio
 import tempfile

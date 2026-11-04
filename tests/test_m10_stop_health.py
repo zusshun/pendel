@@ -1,4 +1,4 @@
-"""M10：dry-run 本地停止恢复和按实际任务判定健康，不访问网络。"""
+"""M10: test local stop recovery in dry-run mode and task-based health checks without network access."""
 
 import json
 import logging
@@ -15,7 +15,7 @@ from test_maker_e2e import Alerts, Clock, Exchange, Files
 
 
 class NoNetworkAPI:
-    """任何 API 调用都记录并立即失败，覆盖读取、写入与停止接口。"""
+    """Record and immediately fail every API call, including reads, writes, and stop endpoints."""
 
     def __init__(self):
         self.gate, self.calls, self.in_flight_writes = SendGate(), [], 0

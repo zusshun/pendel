@@ -1,4 +1,4 @@
-"""采集断档只影响依赖相应市场频道的回测，风险与时长完整披露。"""
+"""Collection gaps affect only backtests that depend on the relevant market channels, with full risk and duration disclosure."""
 
 import unittest
 from dataclasses import replace
@@ -34,7 +34,7 @@ class CollectorGapTests(unittest.TestCase):
             guard_move_bps=10000, requote_bps=10000, reward_two_sided=False)
 
     def replay(self, gaps, settings=None, trades=(), end=10000):
-        # 断档测试先提供双边成交，以满足中点基差的预热条件。
+        # Provide fills on both sides before gap tests to satisfy midpoint basis warmup requirements.
         return run_backtest([ondo(0, 'ask'), ondo(0, 'bid', side='sell'), *trades],
                             [binance(0)], settings or self.settings,
                             symbol='INTC', start_ms=0, end_ms=end, gaps=gaps)

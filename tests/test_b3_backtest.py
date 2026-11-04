@@ -1,4 +1,4 @@
-"""B3 双边基差、套利吃单和估值边界回归。"""
+"""B3 regressions for two-sided basis, arbitrage taking, and valuation boundaries."""
 
 import unittest
 from dataclasses import replace

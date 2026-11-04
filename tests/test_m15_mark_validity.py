@@ -1,4 +1,4 @@
-"""M15 按价变推送的标记价格有效性、公开 REST 确认与真实样本回放。"""
+"""M15 tests for change-driven mark price validity, public REST confirmation, and real sample replay."""
 
 import asyncio
 import copy
@@ -113,7 +113,7 @@ class M15MarkValidityTests(unittest.IsolatedAsyncioTestCase):
         await self.ready()
         self.clock.now += 61
         self.healthy_book()
-        # REST 确认当前值时，价未变的 lastUpdatedTime 仍可等于原 WS 源时间。
+        # When REST confirms the current value, an unchanged price may retain the original WS source timestamp in lastUpdatedTime.
         self.rest_source_age = 61
         await self.poll()
         await self.bot.tick()
@@ -477,7 +477,7 @@ class M15MarkValidityTests(unittest.IsolatedAsyncioTestCase):
     async def test_real_ws_sample_replay_keeps_mark_during_fifty_nine_second_price_quiet(self):
         message = json.loads((SAMPLES/'ws_markPricesPerps.json').read_text(encoding='utf-8'))
         book_message = json.loads((SAMPLES/'ws_depthBooksPerps.json').read_text(encoding='utf-8'))
-        # 删除近档模拟稀疏盘口，真实样本的价格和量均保留。
+        # Remove nearby levels to simulate a sparse book while preserving the real sample prices and quantities.
         book_message['data'][0]['bids'] = book_message['data'][0]['bids'][2:]
         book_message['data'][0]['asks'] = book_message['data'][0]['asks'][2:]
         self.clock.epoch = timestamp_ms(message['timestamp'])/1000
@@ -487,7 +487,7 @@ class M15MarkValidityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.bot.last_decision.center, D('247.81'))
         self.clock.now += 59
         next_book = copy.deepcopy(book_message)
-        # 回放健康盘口心跳；价和量沿用样本，只推进消息时间。
+        # Replay healthy order book heartbeats, preserving sample prices and quantities and advancing only message time.
         next_book['timestamp'] = next_book['data'][0]['time'] = self.source_time()
         await self.bot.on_public(json.dumps(next_book))
         await self.bot.tick()

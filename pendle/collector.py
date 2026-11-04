@@ -1,4 +1,4 @@
-"""只读常驻采集：独立写盘、连接断档与逐市场质量统计。"""
+"""Continuous read-only collection with a separate disk writer, connection gaps, and per-market quality statistics."""
 
 import asyncio
 import gzip
@@ -29,7 +29,7 @@ def _json(value):
 
 
 class HourlyWriter:
-    """在写盘线程内使用；定期刷新 gzip，便于异常退出后救回完整行。"""
+    """Use in the writer thread; flush gzip periodically to recover complete lines after an abnormal exit."""
 
     def __init__(self, directory, run_id, max_disk_gb, min_free_gb='2', *,
                  monotonic=time.monotonic):
@@ -136,7 +136,7 @@ class Collector:
             self.expected.add(('lighter', symbol, 'orderBookOrders'))
 
     def scope_keys(self):
-        """连接和整频道共同构成停挂范围，星号与历史库的非空字符串约束兼容。"""
+        """Connection-wide and channel-wide gaps define quote suspension scopes; asterisks satisfy nonempty history-store constraints."""
         channels = {(source, '*', channel) for source, _, channel in self.expected}
         return channels | {(source, '*', '*') for source, _, _ in self.expected}
 
@@ -196,7 +196,7 @@ class Collector:
                     if start is None:
                         start = connection.get('last_seen_ms', old['checkpoint_ms'])
                 else:
-                    # 旧版本逐市场检查点聚合为连接范围，已记录断档保留最早起点。
+                    # Aggregate legacy per-market checkpoints into connection scope, preserving the earliest recorded gap start.
                     starts = [item['gap_start_ms'] for item in items
                               if item.get('gap_start_ms') is not None]
                     start = min(starts) if starts else max(
@@ -235,7 +235,7 @@ class Collector:
             try:
                 await asyncio.shield(saving)
             except asyncio.CancelledError:
-                # 线程不会随协程取消；持锁等它结束，避免退出后又生成运行标记。
+                # The thread outlives coroutine cancellation; hold the lock until it finishes to avoid recreating run markers after exit.
                 await saving
                 raise
 
@@ -277,7 +277,7 @@ class Collector:
             if last is None or elapsed_at - last >= float(settings.focus_snapshot_s):
                 await self.emit('ondo', 'depth', market, payload, at)
                 self.last_snapshot[snapshot_key] = elapsed_at
-        # 所有可交易市场均按分钟采样；完整盘口不能代替派生竞争记录。
+        # Sample all tradable markets each minute; full order books cannot replace derived competition records.
         if market in self.tradable_markets:
             last = self.last_observation.get(snapshot_key)
             if last is None or elapsed_at - last >= float(settings.other_snapshot_s):
@@ -370,7 +370,7 @@ class Collector:
                     self.handle_ondo(raw) if source == 'ondo' else self.handle_binance(raw))
                 await asyncio.shield(processing)
             except asyncio.CancelledError:
-                # wait 恢复前也可能收到取消；已取到的消息仍须完成入队。
+                # Cancellation may arrive before wait resumes; messages already received must still finish enqueueing.
                 if (processing is None and incoming.done() and not incoming.cancelled()
                         and incoming.exception() is None):
                     raw = incoming.result()
@@ -472,7 +472,7 @@ class Collector:
         await self.emit('ondo', 'markets', None, payload)
 
     async def contracts_once(self):
-        # 同一采样周期分别保存，两条接口之一失败不会丢弃另一条的有效响应。
+        # Save each endpoint independently within a sampling cycle so one failure cannot discard the other's valid response.
         async def collect(channel, operation):
             try:
                 await operation()
@@ -489,7 +489,7 @@ class Collector:
                 payload = await self.http(ONDO_API + '/depth?' + urlencode({
                     'market': market, 'depth': self.settings.depth}))
                 book = parse_ondo(payload, market, self.now_ms())
-                # REST 仅补充观测，不代表 WS 已恢复，也不能关闭 WS 的断档。
+                # REST only supplements observations; it neither proves WS recovery nor closes WS gaps.
                 await self.record_book(book, payload, source='rest')
             except (MarketError, OSError, ValueError, TypeError) as exc:
                 await self.emit('ondo', 'error', market, {'error': str(exc), 'channel': 'rest_depth'})
@@ -576,7 +576,7 @@ class Collector:
         lines = [{'时间': at, '来源': stats, '队列长度': self.queue.qsize(),
                   '断档数量': len(self.gaps), '币安各符号最近消息年龄秒': ages}]
         for source, opened in self.connected_since.items():
-            # 重连不应抹掉持续无行情的证据；只有有效行情才重置这个静默期。
+            # Reconnection must preserve evidence of ongoing market-data silence; only valid data resets this silence period.
             since = self.source_last_monotonic.get(source, self.started_monotonic)
             if elapsed_at - since >= float(self.settings.source_silence_warn_s):
                 if self.silence_warned.get(source) == since:
@@ -690,7 +690,7 @@ class Collector:
 
 
 def run_collect(settings, **dependencies):
-    """仅 collect 需要可选依赖，其余离线命令无需安装 websockets。"""
+    """Only collect requires the optional dependency; other offline commands do not require websockets."""
     if dependencies.get('connect') is None:
         try:
             from websockets import connect

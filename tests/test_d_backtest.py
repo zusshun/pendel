@@ -1,4 +1,4 @@
-"""批次 D：即时套利损失、旧仓漂移与实采可见时间回归。"""
+"""Batch D: regressions for immediate arbitrage losses, existing position drift, and visibility times in collected data."""
 
 import unittest
 from dataclasses import replace

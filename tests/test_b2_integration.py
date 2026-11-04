@@ -1,4 +1,4 @@
-"""用真实事件回放验证两种对冲模式的 B2 账目，而非手填费用。"""
+"""Verify B2 accounting in both hedging modes using real event replay rather than manually supplied fees."""
 
 import unittest
 from dataclasses import replace
@@ -41,7 +41,7 @@ class B2IntegrationTests(unittest.TestCase):
                 reports[mode] = report
                 parts = report['pnl_decomposition']
                 self.assertTrue(parts['complete'])
-                # 两侧中点基差使第二笔决策中心为 99.5，300 秒中心为 101。
+                # The two-sided midpoint basis gives the second decision a center of 99.5 and the 300-second center a value of 101.
                 self.assertEqual(parts['spread_capture'], D('1.25'))
                 self.assertEqual(parts['adverse_selection'], D('-.25'))
                 self.assertAlmostEqual(parts['spread_capture']+parts['adverse_selection']

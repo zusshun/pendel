@@ -1,4 +1,4 @@
-"""M5 判据权重必须与回测一致，并保留双口径观测值。"""
+"""M5 eligibility weights must match backtests and retain observations for both metrics."""
 
 import tempfile
 import unittest

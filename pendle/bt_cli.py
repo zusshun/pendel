@@ -1,4 +1,4 @@
-"""历史研究命令；与现有录制及回放入口隔离。"""
+"""Historical research commands, separate from existing recording and replay entry points."""
 
 import json
 import os
@@ -18,7 +18,7 @@ COMMANDS = ('fetch-history', 'import-scan', 'competition', 'backtest')
 
 
 def register_commands(commands):
-    """仅添加子命令，不改变原有命令参数。"""
+    """Add subcommands without changing existing command arguments."""
     descriptions = ('抓取公开历史或离线导入原始归档', '导入盘口扫描 JSONL',
                     '生成分时竞争排名', '运行确定性历史奖励回测')
     for name, description in zip(COMMANDS, descriptions):
@@ -41,7 +41,7 @@ def register_commands(commands):
 
 
 def json_value(value):
-    """保留十进制金额精度，JSON 金额使用字符串。"""
+    """Preserve decimal precision by serializing monetary amounts as JSON strings."""
     if isinstance(value, Decimal):
         return str(value)
     if isinstance(value, Mapping):
@@ -135,8 +135,8 @@ def _backtests(store, settings, start_ms, end_ms, *, include_events=False):
                            for mode in ('none', 'lighter_proxy'))
             continue
         identity = symbol_settings.for_symbol(symbol)
-        # 完整历史用于双侧样本预热；逐笔样本的有效期由回放时钟控制。
-        # 结束时刻之后的数据仍不传入，保证报价和映射校验没有前视。
+        # Use full history to warm up both sides; the replay clock controls individual sample validity.
+        # Exclude data after the end time to prevent lookahead in quoting and mapping validation.
         ondo = list(store.iter_ondo_trades(identity.ondo_market, end_ms=end_ms))
         binance = list(store.iter_binance_trades(identity.binance_symbol, end_ms=end_ms))
         observations = list(store.iter_depth_observations(identity.ondo_market))
@@ -172,7 +172,7 @@ def _backtests(store, settings, start_ms, end_ms, *, include_events=False):
                 if not include_events:
                     for field in ('events', 'ondo_trades', 'binance_prices', 'center_prices'):
                         report.pop(field, None)
-                    # 聚合完成后只保留奖励复算及报价状态所需的分钟字段。
+                    # After aggregation, retain only minute fields needed to recalculate rewards and track quote state.
                     minute_fields = ('time_ms', 'my_weight', 'two_sided', 'online',
                                      'guard_paused', 'center', 'reward_mid')
                     report['minutes'] = [{field: minute[field] for field in minute_fields
@@ -187,7 +187,7 @@ def _backtests(store, settings, start_ms, end_ms, *, include_events=False):
 
 
 def _fetch_coverage(fetches, identity, start_ms, end_ms, gaps):
-    """仅用抓取来源证明整窗覆盖；逐笔成交稀疏本身不代表采集断档。"""
+    """Establish full-window coverage from fetch provenance; sparse trades alone do not imply capture gaps."""
     ondo = any(row['source'] == 'ondo' and row['complete']
                and row['params'].get('market') == identity.ondo_market
                and row['params'].get('start_ms', end_ms) <= start_ms
@@ -216,7 +216,7 @@ def _fetch_coverage(fetches, identity, start_ms, end_ms, gaps):
 
 
 def dispatch(args, *, output_json, protect_inputs):
-    """执行独立历史命令，沿用主 CLI 的中文异常和退出码约定。"""
+    """Run standalone historical commands using the main CLI's Chinese exceptions and exit-code conventions."""
     _guard_outputs(args, protect_inputs)
     settings = _settings(args)
     start_ms = end_ms = None

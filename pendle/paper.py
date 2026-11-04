@@ -1,4 +1,4 @@
-"""离散盘口的确定性假设成交模型，不连接账户或真实交易接口。"""
+"""Deterministic hypothetical fill model for discrete order books, without account or live trading connections."""
 
 import hashlib
 import json
@@ -20,7 +20,7 @@ def floor_step(value, step):
 
 
 class DepthBudget:
-    """相同观察量不刷新额度；仅补充逐价位可见数量的正增量。"""
+    """Identical observations do not replenish budgets; add only positive increases in visible quantity per price level."""
 
     def __init__(self):
         self.observed = {'bids': {}, 'asks': {}}
@@ -151,7 +151,7 @@ class Simulator:
                     break
 
     def queue_hedge(self, quantity, at):
-        """已知相反成交先抵销，不让旧任务在净敞口归零后重新开仓。"""
+        """Offset known opposing fills first so old tasks cannot reopen positions after net exposure reaches zero."""
         for item in self.pending:
             if item.quantity * quantity < 0:
                 offset = min(abs(item.quantity), abs(quantity))

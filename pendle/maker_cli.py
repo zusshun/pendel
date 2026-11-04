@@ -1,4 +1,4 @@
-"""做市命令的参数与模式检查；交易逻辑延迟导入。"""
+"""Argument and mode validation for maker commands; import trading logic lazily."""
 
 from pathlib import Path
 
@@ -30,7 +30,7 @@ def dispatch(args):
     if args.command == 'maker' and not reset:
         if live != (settings.mode == 'live'):
             raise ValueError('live 必须同时满足配置 mode="live" 和命令行 --live')
-    # 账户 flock 由这三个入口统一持有，避免 CLI 与运行循环重复获取同一把锁。
+    # These three entry points own the account flock so the CLI and run loop do not acquire the same lock twice.
     from .maker import reset_halt, run_cancel_all, run_maker
     if reset:
         return reset_halt(settings)

@@ -1,4 +1,4 @@
-"""离线导入已备份的公开行情，保留来源、校验结果和真实覆盖范围。"""
+"""Import backed-up public market data offline, preserving provenance, validation results, and actual coverage."""
 
 import gzip
 import hashlib
@@ -14,7 +14,7 @@ from .market import MarketError, number
 
 
 def load_symbol_settings(store, settings, symbol):
-    """优先采用 markets 快照中的交易精度，显式标的覆盖拥有最高优先级。"""
+    """Prefer trading precision from markets snapshots, with explicit per-asset overrides taking highest priority."""
     fallback = settings.for_symbol(symbol)
     tick, step = None, None
     for row in store.iter_contracts(fallback.ondo_market):
@@ -125,7 +125,7 @@ def _import_binance(path, symbol, store):
 
 
 def import_raw_history(raw_dir, symbols, start_ms, end_ms, store, settings):
-    """导入本地完整备份以保留预热数据；单标的失败记录后继续处理。"""
+    """Import complete local backups to retain warmup data; record per-asset failures and continue."""
     _integer(start_ms, 'start_ms')
     _integer(end_ms, 'end_ms')
     if end_ms <= start_ms:

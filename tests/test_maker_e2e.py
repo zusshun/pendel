@@ -1,4 +1,4 @@
-"""内存交易所端到端验收；无套接字和真实文件写入。"""
+"""End-to-end acceptance tests with an in-memory exchange, without sockets or real file writes."""
 
 import asyncio
 import json
@@ -16,7 +16,7 @@ from test_maker import book, MARKET
 
 
 def live_deadman_ack(timeout=30):
-    """模拟真实私有频道嵌套的死人开关订阅确认。"""
+    """Simulate a real private-channel nested dead man's switch subscription acknowledgment."""
     return {'type': 'subscribed', 'channel': 'cancelAllOrdersAfterPerps',
             'data': {'timeout_seconds': timeout}}
 
@@ -68,7 +68,7 @@ class Alerts:
 
 
 def publish_exchange_book(bot, exchange, clock):
-    """模拟全量盘口：保留当前第三方档位，替换上次发布的自有剩余量。"""
+    """Simulate a full book: preserve current third-party levels and replace the previously published remaining own quantity."""
     if bot.book is None:
         return
     sides=[dict(bot.book.bids),dict(bot.book.asks)]
@@ -92,7 +92,7 @@ def publish_exchange_book(bot, exchange, clock):
 
 
 class Exchange:
-    """写请求可超时、IOC可部分撮合；事件从同一账户状态入账。"""
+    """Writes may time out and IOC orders may fill partially; events use the same account state for accounting."""
     def __init__(self, clock, files):
         self.clock, self.files, self.gate = clock, files, SendGate()
         self.rows, self.calls, self.fills = {}, [], []
@@ -362,7 +362,7 @@ class MakerE2E(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.bot.state.market_mode(MARKET), 'SYNCING')
         self.assertTrue(self.bot.reconcile_event.is_set())
         self.assertTrue(any('待沙盒样本' in text for text in self.alerts.messages))
-        # 缺市场的推送不猜测归属，由带市场身份的 REST 对账补全成交与费用。
+        # Do not infer the market for updates missing it; use market-specific REST reconciliation to backfill fills and fees.
         self.exchange.position = D('.1')
         self.exchange.fills.append(dict(fill_id='f1', market=MARKET, side='buy', quantity=D('.1'),
             time_ms=at, client_order_id='foreign', realized_pnl=D(0), fee=D('.01')))
@@ -424,7 +424,7 @@ class MakerE2E(unittest.IsolatedAsyncioTestCase):
 
     async def test_stale_anchor_without_fresh_mark_never_authorizes_hard_cap_ioc(self):
         self.bot.engine.anchor,self.bot.engine.anchor_at=D(100),self.clock()-601
-        # M13 的新鲜 mark 可以建立新中心；两种来源均不可用时旧锚仍不得授权 IOC。
+        # A fresh M13 mark can establish a new center; when both sources are unavailable, the old anchor must not authorize IOC orders.
         self.bot.engine.mark=(D(100),self.clock()-self.bot.settings.mark_quiet_max_s-.001)
         self.bot.state.positions[MARKET]=self.exchange.position=D(6)
         self.bot.state.orders={}

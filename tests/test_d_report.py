@@ -1,4 +1,4 @@
-"""最终修复批次 D 的报告口径与数据适用性回归测试。"""
+"""Final batch D regression tests for report metrics and data applicability."""
 
 import copy
 import unittest

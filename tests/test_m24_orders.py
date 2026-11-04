@@ -1,4 +1,4 @@
-"""M24：以真实订单字段验证时间排序、可选标识与 REST 对账。"""
+"""M24: verify time ordering, optional identifiers, and REST reconciliation using real order fields."""
 
 import json
 import unittest

@@ -1,4 +1,4 @@
-"""逐行导入小时采集归档，容忍进程退出造成的 gzip 或 JSON 尾部截断。"""
+"""Import hourly capture archives line by line, tolerating truncated gzip or JSON tails after process exit."""
 
 import gzip
 import json
@@ -8,7 +8,7 @@ from .market import MarketError
 
 
 def _lines(path, counts):
-    """read1 先返回已解压内容，避免 gzip 尾部缺失时丢掉先前完整行。"""
+    """Use read1 to return decompressed data before a missing gzip tail can discard earlier complete lines."""
     pending = b''
     opener = gzip.open if path.name.endswith('.gz') else open
     with opener(path, 'rb') as stream:
@@ -46,14 +46,14 @@ def _import_row(row, store, counts):
         counts['ignored'] += 1
         counts['ignored_by_kind'][kind] += 1
         if kind == 'market_stale':
-            # 质量事件按归档行计数，开始和恢复各一条；不写入回测断档表。
+            # Count quality events by archive row, one each for onset and recovery; do not write them to backtest gap tables.
             counts['market_stale'] += 1
     else:
         raise ValueError('采集记录 kind 无效')
 
 
 def import_collected(src, store):
-    """递归导入归档，重复导入仅计新增成交、观测、合约与断档实质更新。"""
+    """Import archives recursively; repeated imports count only new trades, observations, contracts, and actual gap updates."""
     src = Path(src)
     if not src.exists():
         raise ValueError('采集文件或目录不存在：' + str(src))

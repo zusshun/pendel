@@ -1,4 +1,4 @@
-"""M14 固定订单只复核约束，保留与同价同剩量的新意图结论等价。"""
+"""M14 fixed orders are checked only against constraints, matching new intents at the same price and remaining quantity."""
 
 import random
 import unittest
@@ -19,7 +19,7 @@ class M14ConstraintValidationTests(unittest.TestCase):
         bot = Maker(replace(MakerSettings(), mode='sandbox'), api=Exchange(clock, files),
                     alerter=Alerts(), files=files, rules=MarketRules('.01', '.001'),
                     monotonic=clock, clock=clock.wall, sleep=clock.sleep)
-        # 源时间入站测试独立覆盖；此处直接注入已确认的新鲜数据。
+        # Source timestamp ingestion is tested separately; inject confirmed fresh data here.
         bot.engine.mark = (D(100), clock())
         bot.engine.in_price_discovery = False
         bot.engine.price_discovery_seen = clock()
@@ -54,7 +54,7 @@ class M14ConstraintValidationTests(unittest.TestCase):
         return tuple(outcomes)
 
     def test_one_bps_center_move_keeps_constraint_compliant_old_pair(self):
-        # mark 为 100，第三方中间价为 100.01；旧单仍满足 center/mark 距离和 post-only。
+        # The mark is 100 and the third-party midpoint is 100.01; existing orders still satisfy center/mark distances and post-only constraints.
         bids = (('99.91', '1'), ('99', '1'))
         asks = (('100.11', '1'), ('101', '1'))
         bot, clock = self.make_bot()
@@ -102,7 +102,7 @@ class M14ConstraintValidationTests(unittest.TestCase):
             remaining = rng.choice((D('.5'), D(1), D(5)))
             filled = rng.choice((D(0), D('.7'), D('2.3')))
             post_only = case % 13 != 0
-            # 两种冷启动来源均覆盖，避免把等价性与来源切换计时耦合。
+            # Cover both cold-start sources without coupling equivalence to source-switch timing.
             bids, asks = ((('99', '1'),), (('101', '1'),)) if case % 2 else (
                 (('99.95', '1'), ('99', '1')), (('100.05', '1'), ('101', '1')))
             expected = D(8) <= distance <= D(22) and remaining <= 1 and post_only

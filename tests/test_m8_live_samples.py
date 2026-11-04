@@ -1,4 +1,4 @@
-"""M8 真实公开样本回放；只注入传输，不替换 Maker 及其业务组件。"""
+"""M8 real public sample replay; inject only transport, retaining Maker and its business components."""
 
 import copy
 import json

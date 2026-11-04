@@ -1,4 +1,4 @@
-"""M4 停止贯通回归；签名队列和交易所均为内存依赖。"""
+"""M4 end-to-end stop regressions using an in-memory signing queue and exchange."""
 
 import asyncio
 import json
@@ -218,7 +218,7 @@ class M4StopTests(unittest.IsolatedAsyncioTestCase):
             result = await original(request)
             if request.method == 'DELETE' and not delivered:
                 delivered = True
-                # 已受理回执迟到：撤单前后的状态版本变化必须让核零重试。
+                # Late acceptance ACK: state version changes across cancellation must trigger another check for zero open orders.
                 self.bot.state.apply_order_event(accepted, source='rest')
             return result
 

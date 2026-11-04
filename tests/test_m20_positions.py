@@ -1,4 +1,4 @@
-"""M20：真实 REST 空记录的对账语义及既有同步屏障。"""
+"""M20: reconciliation semantics for real empty REST records and existing synchronization barriers."""
 
 import asyncio
 import json

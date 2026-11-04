@@ -1,4 +1,4 @@
-"""M20：真实 live 组装在空账户样本下完成启动并开始双边报价。"""
+"""M20: the real live builder starts successfully with empty account samples and begins two-sided quoting."""
 
 import asyncio
 import copy
@@ -29,7 +29,7 @@ def sample(name):
 
 
 class SimulatedWS:
-    """只通过 WS 消费循环投递交易所消息，保留完整发送及 ACK 顺序。"""
+    """Deliver exchange messages only through the WS consumer loop, preserving the full send and ACK sequence."""
 
     def __init__(self, exchange, *, private):
         self.exchange, self.private = exchange, private
@@ -46,7 +46,7 @@ class SimulatedWS:
         elif self.private and message.get('channel') == 'cancelAllOrdersAfterPerps':
             timeout = message['timeout_seconds']
             self.exchange.events.append(('死人开关请求', timeout))
-            # 开启 ACK 由测试显式投递，以证明报价不会越过 ACK 屏障。
+            # Deliver the enable ACK explicitly to verify that quoting cannot bypass the ACK barrier.
             if timeout == 0:
                 await self.incoming.put(copy.deepcopy(fixtures['deadman_ack_disable']))
         elif self.private and message.get('op') == 'subscribe':
@@ -77,7 +77,7 @@ class SimulatedWS:
 
 
 class LiveStartupExchange:
-    """模拟网络边界，REST 保留真实空列表、余额、元数据的响应形态。"""
+    """Mock the network boundary while preserving real REST response shapes for empty lists, balances, and metadata."""
 
     def __init__(self, clock):
         self.clock, self.private_samples = clock, sample('ws_private_samples')
@@ -102,7 +102,7 @@ class LiveStartupExchange:
         return HttpResponse(200, {'ok': True})
 
     async def publish_market(self):
-        """行情仍走 WS 接收器；浅盘口降低竞争量，并包含模拟交易所自有挂单。"""
+        """Market data still uses the WS receiver; a shallow book reduces competing volume and includes the mock exchange's own resting orders."""
         source_time = datetime.fromtimestamp(self.wall(), timezone.utc).isoformat()
         depth, mark = sample('ws_depthBooksPerps'), sample('ws_markPricesPerps')
         depth['timestamp'] = depth['data'][0]['time'] = source_time
@@ -181,7 +181,7 @@ class M20LiveStartupTests(unittest.IsolatedAsyncioTestCase):
             task = asyncio.create_task(bot.run(live=True))
             try:
                 await self.drive_until(lambda: bot.deadman_requested and bot.engine.mark is not None)
-                # 让正常 run 循环实际评估一次完整行情，再证明 ACK 屏障仍禁止下单。
+                # Let the normal run loop evaluate a complete market snapshot, then verify that the ACK barrier still blocks orders.
                 market_ready_at = self.clock.monotonic()
                 await self.drive_until(lambda: bot.decision_seen is not None
                     and bot.decision_seen > market_ready_at, seconds=1)

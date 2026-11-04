@@ -1,4 +1,4 @@
-"""发送队列末端使用最新盘口复核固定意图，不改变策略慢锚。"""
+"""Revalidate fixed intents against the latest order book at the end of the send queue without changing the strategy slow anchor."""
 
 import unittest
 from dataclasses import replace

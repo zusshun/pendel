@@ -1,4 +1,4 @@
-"""Ondo 实盘接入安全边界；所有网络传输均由调用方显式注入。"""
+"""Safety boundary for live Ondo access; callers explicitly inject all network transports."""
 
 import asyncio
 import hashlib
@@ -38,15 +38,15 @@ _ID = re.compile(r'[A-Za-z0-9_.~-]+\Z')
 
 
 class EndpointNotAllowed(ValueError):
-    """本模块没有授权访问该接口。"""
+    """This module is not authorized to access the endpoint."""
 
 
 class GateClosed(RuntimeError):
-    """对外发送已被关闭。"""
+    """Outbound sending has been disabled."""
 
 
 def rest_signature(secret, timestamp_ms, method, path_query, body=''):
-    """严格签名实际发送的路径、查询和正文，保留完整密钥前缀。"""
+    """Sign the exact transmitted path, query, and body, preserving the full key prefix."""
     prehash = str(timestamp_ms) + method.upper() + path_query + body
     return hmac.new(secret.encode(), prehash.encode(), hashlib.sha256).hexdigest()
 
@@ -93,7 +93,7 @@ def load_credentials(*, env=None, secret_file=None, file_reader=_read_secret_fil
 
 
 class SecretFilter(logging.Filter):
-    """用于接入模块日志的密钥与签名遮蔽，不保留异常原文。"""
+    """Redact keys and signatures from access-module logs without retaining original exception text."""
 
     def __init__(self, credentials):
         super().__init__()
@@ -133,7 +133,7 @@ def classify_error(status, code=None, *, cancelling=False, order_found=None):
 class ApiError(RuntimeError):
     def __init__(self, status, code=None, *, cancelling=False, order_found=None, error=None):
         self.status = status
-        # 错误码只允许短标识符；交易所错误文本由接入层脱敏后单独保留。
+        # Allow only short error-code identifiers; retain exchange error text separately after access-layer redaction.
         self.code = code if isinstance(code, str) and re.fullmatch(r'[A-Za-z0-9_]{1,100}', code) else None
         self.error = error if isinstance(error, str) else None
         self.category = classify_error(status, self.code, cancelling=cancelling, order_found=order_found)
@@ -146,7 +146,7 @@ class TransportError(ApiError, OSError):
 
 
 class ResponseFormatError(ApiError):
-    """响应无法按接口语义解析；保留真实状态及交易所错误码。"""
+    """The response cannot be parsed according to endpoint semantics; retain its actual status and exchange error code."""
 
     response_format = True
 
@@ -164,7 +164,7 @@ def _error_code(payload):
 
 
 class _ResponsePayload(dict):
-    """携带本次响应来源，避免并发请求间误用状态码。"""
+    """Retain response provenance to prevent mixing status codes across concurrent requests."""
 
     def __init__(self, response, *, cancelling=False):
         super().__init__(response.payload)
@@ -216,7 +216,7 @@ def _endpoint(method, path_query):
 
 
 class SendGate:
-    """单事件循环使用的不可逆发送闸门，关闭后仅保留有限停止通道。"""
+    """An irreversible send gate for one event loop, retaining only a limited shutdown path after closure."""
 
     def __init__(self):
         self.is_open = True
@@ -275,7 +275,7 @@ class SendGate:
 
     async def send_ws(self, sender, message):
         self.check()
-        # 检查与进入传输之间没有让出事件循环，涵盖公开和私有连接。
+        # Do not yield between the check and transport entry, for either public or private connections.
         return await sender(message)
 
     async def connect(self, factory, *args, **kwargs):
@@ -306,7 +306,7 @@ class _Pending:
 
 
 class OndoAPI:
-    """带优先级令牌桶的异步客户端；传输接收 HttpRequest，返回 HttpResponse。"""
+    """Async client with a priority token bucket; transports accept HttpRequest and return HttpResponse."""
 
     def __init__(self, credentials, *, transport, environment='sandbox', gate=None,
                  rate=1, timeout_s=5, clock=time.time, monotonic=time.monotonic, sleep=asyncio.sleep,
@@ -338,7 +338,7 @@ class OndoAPI:
 
     @property
     def in_flight_writes(self):
-        """包含本地已超时但实际传输仍未结束的下单，停止时不得忽略。"""
+        """Include locally timed-out order submissions whose transports are still running; shutdown must account for them."""
         return sum(method == 'POST' and not task.done()
                    for task, method in self._transmissions.items())
 
@@ -435,7 +435,7 @@ class OndoAPI:
                     self._runner = asyncio.create_task(self._drain())
                 return
         except asyncio.CancelledError:
-            # 传输自行取消同样可能已受理；调用方仍在等时必须返回 UNKNOWN 类错误。
+            # A self-cancelled transport may still have been accepted; return an UNKNOWN error while the caller is waiting.
             if not item.future.done():
                 item.future.set_exception(TransportError())
         except Exception as exc:
@@ -448,7 +448,7 @@ class OndoAPI:
             timer.cancel()
             if not transmission.done():
                 transmission.cancel()
-            # 传输可能无视取消，不能让其阻塞后续撤单或停止流程。
+            # Transports may ignore cancellation; do not let them block later cancellations or shutdown.
             transmission.add_done_callback(self._consume_task)
             await asyncio.gather(timer, return_exceptions=True)
 
@@ -541,7 +541,7 @@ class OndoAPI:
         return payload['result']
 
     async def sync_time(self):
-        """校验系统 NTP 和 REST Date，不通过虚构接口调整本地时钟。"""
+        """Validate system NTP and REST Date without adjusting the local clock through a nonexistent endpoint."""
         self.clock_verified = False
         try:
             synchronized = self.ntp_check()
@@ -655,7 +655,7 @@ class OndoAPI:
 
 
 def check_ntp_synchronized(*, run=subprocess.run):
-    """Linux 只读取 timedatectl 的同步状态，失败时拒绝放行。"""
+    """On Linux, read only timedatectl synchronization status and fail closed on errors."""
     try:
         result = run(['timedatectl', 'show', '-p', 'NTPSynchronized'],
                      capture_output=True, text=True, timeout=3, check=False)
@@ -702,7 +702,7 @@ def normalize_balance(row, *, status=0, code=None):
             number(result[key])
         if type(result['under_liquidation']) is not bool:
             raise ValueError
-        # 待沙盒核实：交易所 marginRatio 的量纲；不可用时由风险层估算并告警。
+        # Verify marginRatio units in the sandbox; the risk layer estimates and alerts when unavailable.
         try:
             ratio = number(row.get('marginRatio'))
             result['margin_ratio'] = row['marginRatio'] if ratio >= 0 else None
@@ -714,7 +714,7 @@ def normalize_balance(row, *, status=0, code=None):
 
 
 def exchange_time_ms(value, *, status=0, code=None):
-    """成交官方 time 接受毫秒整数或有时区的 ISO 时间。"""
+    """Accept the official trade time as integer milliseconds or a timezone-aware ISO timestamp."""
     if type(value) is int and value >= 0:
         return value
     if isinstance(value, str):

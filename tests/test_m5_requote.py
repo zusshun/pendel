@@ -1,4 +1,4 @@
-"""M5 微动保留与重报节流；所有 DELETE 均经过真实签名队列的内存传输。"""
+"""M5 small-move retention and requote throttling; all DELETE requests use the real signing queue with in-memory transport."""
 
 import unittest
 from dataclasses import replace
@@ -73,7 +73,7 @@ class M5RequoteTests(unittest.IsolatedAsyncioTestCase):
         return [request for request in self.requests if request.method == 'DELETE']
 
     def set_outer_pair(self, *, buy=None, sell=None):
-        """模拟此前在外沿成交前已挂好的双边，金额留足取整余量。"""
+        """Simulate both sides resting at the outer edge before any fills, with enough notional headroom for rounding."""
         prices = {'buy': D(buy) if buy is not None else (self.center-D('.18')).quantize(self.bot.rules.tick),
                   'sell': D(sell) if sell is not None else (self.center+D('.20')).quantize(self.bot.rules.tick)}
         for order in self.bot.state.active_orders(MARKET):
@@ -121,7 +121,7 @@ class M5RequoteTests(unittest.IsolatedAsyncioTestCase):
                 distance = abs(order.price/reference-1)*D(10000)
                 self.assertGreaterEqual(distance, self.bot.settings.min_offset_bps)
                 self.assertLessEqual(distance, self.bot.settings.band_bps-self.bot.settings.band_margin_bps)
-        # 新理论卖价为 100.15，旧卖价 100.12 已超过收紧后的普通重报阈值。
+        # The new theoretical ask is 100.15; the old ask of 100.12 exceeds the tightened normal requote threshold.
         self.assertGreater(abs(D('100.12')/D('100.15')-1)*D(10000), self.bot.settings.requote_bps)
         self.assertEqual(self.retention_failures(), [])
         await self.drive(self.bot.tick())
@@ -236,7 +236,7 @@ class M5RequoteTests(unittest.IsolatedAsyncioTestCase):
     async def micro_moves(self, *, period):
         await self.live_pair(tick='.001')
         self.set_outer_pair()
-        # 使用明确合规的外沿旧价覆盖普通重报；更快反向微动仍可能触发安全撤单。
+        # Use clearly valid existing outer-edge prices to cover normal requotes; faster reverse moves may still trigger safety cancellation.
         start = self.clock.monotonic()
         ordinary_batches, safety_batches = [], []
         total_deletes = 0
@@ -263,7 +263,7 @@ class M5RequoteTests(unittest.IsolatedAsyncioTestCase):
                     self.assertTrue(failures, '安全撤单必须有完整 M4 复核失败的实际证据')
                     safety_batches.append(at)
             elif self.remote and set(self.remote) != active_ids:
-                # 新一轮测试样本继续使用已存在的外沿旧价，避免理论内沿遮蔽节流覆盖。
+                # Keep existing outer-edge prices in the next sample so the theoretical inner boundary does not mask throttle coverage.
                 self.set_outer_pair()
         self.assertTrue(ordinary_batches, '微动样本必须实际触发通过完整 M4 复核的普通重报')
         self.assertLessEqual(len(ordinary_batches), 300/self.settings.min_requote_interval_s)

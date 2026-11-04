@@ -1,4 +1,4 @@
-"""读取与校验研究参数，所有金额采用十进制定点数。"""
+"""Read and validate research settings, using decimal fixed-point values for all amounts."""
 
 import math
 import re

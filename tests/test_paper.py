@@ -213,7 +213,7 @@ class RiskAndAccountingTests(unittest.TestCase):
                           extra_slippage_bps='0', ondo_maker_fee_bps='1',
                           lighter_taker_fee_bps='2')
         report = replay(run(settings), [sample(1000), sample(2000, '99.7', '99.8', '1')])
-        # 买入1@99.9，卖出对冲1@99.7，期末多按99.7、空按99.8。
+        # Buy 1@99.9 and hedge by selling 1@99.7; value final longs at 99.7 and shorts at 99.8.
         expected_fees = D('99.9') * D('.0001') + D('99.7') * D('.0002')
         expected = D('-.3') - expected_fees
         self.assertEqual(D(report['fees_usdc']), expected_fees)

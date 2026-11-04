@@ -1,4 +1,4 @@
-"""实盘配置必须默认只读，危险或拼错参数不能静默接收。"""
+"""Live configuration must default to read-only mode and reject unsafe or misspelled parameters explicitly."""
 
 import tempfile
 import unittest

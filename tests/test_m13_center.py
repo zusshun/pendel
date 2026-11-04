@@ -1,4 +1,4 @@
-"""M13 双来源报价中心、共同守卫及自我引用反馈；全部离线运行。"""
+"""M13 offline tests for dual-source quote centers, shared guards, and self-referential feedback."""
 
 import unittest
 from dataclasses import replace
@@ -14,7 +14,7 @@ MARKET = 'IBM-USD.P'
 
 
 def depth(bids=(('99', '1'),), asks=(('101', '1'),), now=100):
-    # 单侧/空侧表示扣除自身后的盘口；直接构造以保留现有公共双侧校验。
+    # One-sided/empty books represent the book after excluding own orders; construct them directly to retain existing public two-sided validation.
     return Book('ondo', 'IBM', int(now*1000), int(now*1000),
                 tuple(sorted(((D(p), D(q)) for p, q in bids), reverse=True)),
                 tuple(sorted((D(p), D(q)) for p, q in asks)))
@@ -176,7 +176,7 @@ class M13CenterTests(unittest.TestCase):
                         self.assertGreater(self.engine.ema, before_ema)
 
     def test_one_hour_full_book_feedback_with_continuous_inventory_is_tick_bounded(self):
-        # 压力模型：无固定外部项，mark 完全跟随我方双边报价中点。
+        # Stress model: no fixed external component; the mark follows our two-sided quote midpoint entirely.
         for position in ('.1', '-.1', '3.5', '-3.5'):
             with self.subTest(position=position):
                 self.setUp()

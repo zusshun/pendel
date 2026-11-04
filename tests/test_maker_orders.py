@@ -1,4 +1,4 @@
-"""订单安全状态与异步竞态；不连接交易所。"""
+"""Test order safety states and asynchronous races without connecting to an exchange."""
 
 import asyncio
 import unittest

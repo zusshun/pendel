@@ -1,4 +1,4 @@
-"""M15 公开健康状态和独立 REST 轮询生命周期；只用内存依赖。"""
+"""M15 public health state and independent REST polling lifecycle using in-memory dependencies."""
 
 import asyncio
 import unittest

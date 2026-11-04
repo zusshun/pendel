@@ -1,4 +1,4 @@
-"""常驻采集器的离线行为测试；不访问网络或绑定端口。"""
+"""Offline behavior tests for the persistent collector without network access or port binding."""
 
 import asyncio
 import gzip
@@ -38,7 +38,7 @@ def message(channel, rows):
 
 
 class FakeWS:
-    """可注入异常和延迟的 WS 异步迭代器。"""
+    """WS asynchronous iterator with injectable exceptions and delays."""
 
     def __init__(self, events):
         self.events = iter(events)
@@ -327,7 +327,7 @@ class CollectorTests(unittest.IsolatedAsyncioTestCase):
             yield ws
 
         async def sleep(delay):
-            # 心跳任务使用的等待器不能推进虚拟连接时间。
+            # The heartbeat task's waiter must not advance the virtual connection time.
             if delay >= 30:
                 await asyncio.Event().wait()
             waits.append(delay)
@@ -540,7 +540,7 @@ class CollectorTests(unittest.IsolatedAsyncioTestCase):
         try:
             while not entered.is_set():
                 await asyncio.sleep(0)
-            # 主事件循环仍可处理成交，HTTP 线程全部阻塞也不会阻塞 WS。
+            # The main event loop can still process fills; even if all HTTP threads block, WS processing remains responsive.
             await service.handle_ondo(message('tradesPerps', [trade()]))
             self.assertEqual(service.counts['ondo'], 1)
             self.assertLessEqual(client.maximum, 2)

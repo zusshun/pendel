@@ -1,0 +1,225 @@
+{
+ "_说明": "2026-11-04 11:35 UTC 正式环境：卖单 maker 成交 0.07@253.19 前后 ±6 秒的订单/成交/持仓推送（按接收顺序）；以及非空持仓推送样例",
+ "sequence_around_fill": [
+  {
+   "type": "update",
+   "channel": "ordersPerps",
+   "timestamp": "2026-11-04T11:35:06.089380094Z",
+   "data": [
+    {
+     "orderId": "PZD6EN7TVEDI64OBLHNPPCTL6HJAA6V6",
+     "clientOrderId": "maker-2ddcebc113f9454d-IBM-USD_P-sell-2",
+     "side": "sell",
+     "price": "253.19",
+     "market": "IBM-USD.P",
+     "filledSize": "0.07",
+     "lastFillSize": "0.07",
+     "lastFillPrice": "253.19",
+     "filledCost": "17.7233",
+     "realizedPnl": "0",
+     "fee": "0.001772",
+     "feeRebate": "0.000088",
+     "status": "fullyfilled",
+     "createdAt": "2026-11-04T11:34:50.725384789Z",
+     "filledAt": "2026-11-04T11:35:06.089380094Z",
+     "type": "limit",
+     "timeInForce": "GTC",
+     "postOnly": true,
+     "size": "0.07"
+    }
+   ]
+  },
+  {
+   "type": "update",
+   "channel": "positionsPerps",
+   "timestamp": "2026-11-04T11:35:06.089380094Z",
+   "data": [
+    {
+     "market": "IBM-USD.P",
+     "direction": "short",
+     "netQuantity": "0.07",
+     "averageEntryPrice": "253.19",
+     "usedMargin": "1.7696209",
+     "unrealizedPnl": "0.027091",
+     "markPrice": "252.802995",
+     "liquidationPrice": "4322.74",
+     "bankruptcyPrice": "4538.88",
+     "maintenanceMargin": "0.88481045",
+     "notionalValue": "17.696209",
+     "leverage": "10",
+     "netFundingSinceNeutral": "0",
+     "returnOnEquity": "0.015285528090141226521020351740364379094",
+     "lastUpdate": "2026-11-04T11:35:06.089380094Z"
+    }
+   ]
+  },
+  {
+   "type": "update",
+   "channel": "fillsPerps",
+   "timestamp": "2026-11-04T11:35:06.097380092Z",
+   "data": [
+    {
+     "id": "99762f8cd49acfc349e26d89ae1b187d",
+     "orderId": "PZD6EN7TVEDI64OBLHNPPCTL6HJAA6V6",
+     "clientOrderId": "maker-2ddcebc113f9454d-IBM-USD_P-sell-2",
+     "market": "IBM-USD.P",
+     "price": "253.19",
+     "size": "0.07",
+     "side": "sell",
+     "direction": "openShort",
+     "filledCost": "17.7233",
+     "fee": "0.001772",
+     "feeRebate": "0.000088",
+     "pnl": "0",
+     "time": "2026-11-04T11:35:06.089380094Z",
+     "isMaker": true
+    }
+   ]
+  },
+  {
+   "type": "update",
+   "channel": "positionsPerps",
+   "timestamp": "2026-11-04T11:35:06.261380042Z",
+   "data": [
+    {
+     "market": "IBM-USD.P",
+     "direction": "short",
+     "netQuantity": "0.07",
+     "averageEntryPrice": "253.19",
+     "usedMargin": "1.7696165",
+     "unrealizedPnl": "0.027135",
+     "markPrice": "252.802367",
+     "liquidationPrice": "4322.74",
+     "bankruptcyPrice": "4538.88",
+     "maintenanceMargin": "0.88480825",
+     "notionalValue": "17.696165",
+     "leverage": "10",
+     "netFundingSinceNeutral": "0",
+     "returnOnEquity": "0.015310354166549118956402024453685261774",
+     "lastUpdate": "2026-11-04T11:35:06.089380094Z"
+    }
+   ]
+  },
+  {
+   "type": "update",
+   "channel": "ordersPerps",
+   "timestamp": "2026-11-04T11:35:07.169379776Z",
+   "data": [
+    {
+     "orderId": "3GFK3GES6LVBEYM7S57JIN5OA6JEGHKI",
+     "clientOrderId": "maker-2ddcebc113f9454d-IBM-USD_P-buy-1",
+     "side": "buy",
+     "price": "252.42",
+     "market": "IBM-USD.P",
+     "filledSize": "0",
+     "lastFillSize": "0",
+     "filledCost": "0",
+     "fee": "0",
+     "status": "canceled",
+     "createdAt": "2026-11-04T11:34:49.725385085Z",
+     "canceledAt": "2026-11-04T11:35:07.169379776Z",
+     "type": "limit",
+     "timeInForce": "GTC",
+     "postOnly": true,
+     "size": "0.07"
+    }
+   ]
+  },
+  {
+   "type": "update",
+   "channel": "positionsPerps",
+   "timestamp": "2026-11-04T11:35:07.933379552Z",
+   "data": [
+    {
+     "market": "IBM-USD.P",
+     "direction": "short",
+     "netQuantity": "0.07",
+     "averageEntryPrice": "253.19",
+     "usedMargin": "1.7696796",
+     "unrealizedPnl": "0.026504",
+     "markPrice": "252.811385",
+     "liquidationPrice": "4322.74",
+     "bankruptcyPrice": "4538.88",
+     "maintenanceMargin": "0.8848398",
+     "notionalValue": "17.696796",
+     "leverage": "10",
+     "netFundingSinceNeutral": "0",
+     "returnOnEquity": "0.014954325661699570621723945314924421524",
+     "lastUpdate": "2026-11-04T11:35:06.089380094Z"
+    }
+   ]
+  },
+  {
+   "type": "update",
+   "channel": "positionsPerps",
+   "timestamp": "2026-11-04T11:35:09.88537898Z",
+   "data": [
+    {
+     "market": "IBM-USD.P",
+     "direction": "short",
+     "netQuantity": "0.07",
+     "averageEntryPrice": "253.19",
+     "usedMargin": "1.769732",
+     "unrealizedPnl": "0.025980",
+     "markPrice": "252.818862",
+     "liquidationPrice": "4322.74",
+     "bankruptcyPrice": "4538.88",
+     "maintenanceMargin": "0.884866",
+     "notionalValue": "17.69732",
+     "leverage": "10",
+     "netFundingSinceNeutral": "0",
+     "returnOnEquity": "0.014658669660841942527633115729012091428",
+     "lastUpdate": "2026-11-04T11:35:06.089380094Z"
+    }
+   ]
+  },
+  {
+   "type": "update",
+   "channel": "positionsPerps",
+   "timestamp": "2026-11-04T11:35:11.825378411Z",
+   "data": [
+    {
+     "market": "IBM-USD.P",
+     "direction": "short",
+     "netQuantity": "0.07",
+     "averageEntryPrice": "253.19",
+     "usedMargin": "1.7697219",
+     "unrealizedPnl": "0.026081",
+     "markPrice": "252.817425",
+     "liquidationPrice": "4322.74",
+     "bankruptcyPrice": "4538.88",
+     "maintenanceMargin": "0.88486095",
+     "notionalValue": "17.697219",
+     "leverage": "10",
+     "netFundingSinceNeutral": "0",
+     "returnOnEquity": "0.014715656790778241072486500820953208488",
+     "lastUpdate": "2026-11-04T11:35:06.089380094Z"
+    }
+   ]
+  }
+ ],
+ "position_nonempty_example": {
+  "type": "update",
+  "channel": "positionsPerps",
+  "timestamp": "2026-11-04T12:21:07.924660268Z",
+  "data": [
+   {
+    "market": "IBM-USD.P",
+    "direction": "short",
+    "netQuantity": "0.07",
+    "averageEntryPrice": "253.19",
+    "usedMargin": "1.7655357",
+    "unrealizedPnl": "0.067943",
+    "markPrice": "252.219392",
+    "liquidationPrice": "7724.13",
+    "bankruptcyPrice": "8110.33",
+    "maintenanceMargin": "0.88276785",
+    "notionalValue": "17.655357",
+    "leverage": "10",
+    "netFundingSinceNeutral": "0.002063",
+    "returnOnEquity": "0.038335411576850812207658844571834816315",
+    "lastUpdate": "2026-11-04T12:00:00.005119489Z"
+   }
+  ]
+ }
+}

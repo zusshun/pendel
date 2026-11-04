@@ -1,4 +1,4 @@
-"""历史命令行通过真实本地归档完成离线端到端回放。"""
+"""Test offline end-to-end replay through the historical CLI using real local archives."""
 
 import contextlib
 import gzip
@@ -216,7 +216,7 @@ class BacktestCliTests(unittest.TestCase):
             store.upsert_ondo_trades([{'id': str(index), 'market': 'INTC-USD.P',
                 'time': datetime.fromtimestamp(time / 1000, timezone.utc).isoformat(),
                 'price': '101' if index < 19 else '100', 'size': '1', 'cost': '100',
-                # 旧双侧样本已超龄，仅新鲜买卖各一笔用于分侧中位数。
+                # The old two-sided samples have expired; use one fresh buy and one fresh sell for per-side medians.
                 'aggressor_side': 'buy' if index % 2 == 0 else 'sell'}
                 for index, time in enumerate(times)])
             store.upsert_binance_trades([{'symbol': 'INTCUSDT', 'agg_id': index,

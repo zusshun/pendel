@@ -1,4 +1,4 @@
-"""M11：真实私有样本、严格死人开关确认与只读心跳。"""
+"""M11: real private samples, strict dead man's switch acknowledgments, and read-only heartbeats."""
 
 import asyncio
 import copy

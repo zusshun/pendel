@@ -1,4 +1,4 @@
-"""M12：私有推送去重必须以当前确认的账户状态为准。"""
+"""M12: deduplicate private updates against the currently confirmed account state."""
 
 import unittest
 from copy import deepcopy
@@ -47,7 +47,7 @@ class M12StateDedupTests(unittest.TestCase):
         self.state.position_details[MARKET] = dict(position)
         self.assertTrue(self.state.note_position_event(MARKET, position))
 
-        # 与真实 REST 对账一致：先应用数量，再保存已确认的完整明细。
+        # Match real REST reconciliation: apply quantities first, then store the full confirmed details.
         self.state.apply_untimed_position_snapshot(MARKET, '1')
         self.state.position_details[MARKET] = normalize_position(dict(
             position, unrealizedPnl='-10', markPrice='90'))

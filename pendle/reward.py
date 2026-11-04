@@ -1,4 +1,4 @@
-"""未经官方确认的参数化奖励模型；金额与权重均使用 Decimal。"""
+"""An unofficial parameterized reward model using Decimal for amounts and weights."""
 
 from decimal import Decimal
 
@@ -23,7 +23,7 @@ def _amount(value, name, positive=False, signed=False):
 
 
 def distance_bps(price, reward_mid, reward_mid_error_bps=0):
-    """计算相对中间价的绝对距离，并加上历史中间价误差情景。"""
+    """Compute absolute distance from the midpoint and add the historical midpoint error scenario."""
     price = _amount(price, 'price', positive=True)
     reward_mid = _amount(reward_mid, 'reward_mid', positive=True)
     error = _amount(reward_mid_error_bps, 'reward_mid_error_bps')
@@ -32,7 +32,7 @@ def distance_bps(price, reward_mid, reward_mid_error_bps=0):
 
 def distance_weight(distance_bps, band_bps=25, weight_function='flat',
                     reward_mid_error_bps=0):
-    """返回距离对应的权重；flat 包含边界，linear 在边界为零。"""
+    """Return the distance weight; flat includes the boundary, while linear is zero at the boundary."""
     distance = _amount(distance_bps, 'distance_bps')
     band = _amount(band_bps, 'band_bps', positive=True)
     distance += _amount(reward_mid_error_bps, 'reward_mid_error_bps')
@@ -45,14 +45,14 @@ def distance_weight(distance_bps, band_bps=25, weight_function='flat',
 
 def quote_weight(price, reward_mid, band_bps=25, weight_function='flat',
                  reward_mid_error_bps=0):
-    """返回单个报价的距离权重，数量与名义额由调用方计算。"""
+    """Return one quote's distance weight; the caller computes quantity and notional value."""
     return distance_weight(distance_bps(price, reward_mid), band_bps,
                            weight_function, reward_mid_error_bps)
 
 
 def eligible_weight(bids, asks, reward_mid, *, band_bps=25, weight_function='flat',
                     reward_mid_error_bps=0, reward_two_sided=True, min_quote_usd=0):
-    """按每张订单的最低名义额与距离计算合格权重，再检查双边资格。"""
+    """Compute eligible weight from each order's minimum notional and distance, then check two-sided eligibility."""
     reward_mid = _amount(reward_mid, 'reward_mid', positive=True)
     minimum = _amount(min_quote_usd, 'min_quote_usd')
     distance_weight(0, band_bps, weight_function, reward_mid_error_bps)
@@ -78,7 +78,7 @@ def eligible_weight(bids, asks, reward_mid, *, band_bps=25, weight_function='fla
 
 
 def minute_share(my_weight, comp_weight):
-    """无合格挂单时份额为零，合格且无竞争时份额为一。"""
+    """Share is zero without eligible orders and one when eligible orders face no competition."""
     mine = _amount(my_weight, 'my_weight')
     comp = _amount(comp_weight, 'comp_weight')
     return mine / (mine + comp) if mine else ZERO
@@ -92,7 +92,7 @@ def _minute_pool(pool_usdc_per_week, reward_markets):
 
 
 def minute_reward(my_weight, comp_weight, pool_usdc_per_week, reward_markets=1):
-    """总周奖励池先按市场和周分钟数分摊，再乘我方份额。"""
+    """Allocate the weekly pool across markets and minutes per week, then multiply by our share."""
     return _minute_pool(pool_usdc_per_week, reward_markets) * minute_share(my_weight, comp_weight)
 
 
@@ -101,7 +101,7 @@ def _weights(my_weights):
 
 
 def total_reward(my_weights, comp_weight, pool_usdc_per_week, reward_markets=1):
-    """恒定竞争量下逐分钟累加奖励，零权重分钟不领取奖励。"""
+    """Sum minute rewards under constant competition; zero-weight minutes receive no reward."""
     weights = _weights(my_weights)
     comp = _amount(comp_weight, 'comp_weight')
     pool = _minute_pool(pool_usdc_per_week, reward_markets)
@@ -109,7 +109,7 @@ def total_reward(my_weights, comp_weight, pool_usdc_per_week, reward_markets=1):
 
 
 def break_even_comp(my_weights, pnl_without_reward, pool_usdc_per_week, reward_markets=1):
-    """求恒定竞争量 C*；返回状态与 Decimal 数值，无解时数值为 None。"""
+    """Solve for constant competition C*; return a status and Decimal value, or None when no solution exists."""
     weights = _weights(my_weights)
     pnl = _amount(pnl_without_reward, 'pnl_without_reward', signed=True)
     pool = _minute_pool(pool_usdc_per_week, reward_markets)
@@ -132,7 +132,7 @@ def break_even_comp(my_weights, pnl_without_reward, pool_usdc_per_week, reward_m
             break
         large = tuple(value for value in eligible if value >= middle)
         small = tuple(value for value in eligible if value < middle)
-        # 大权重的份额写成 1 减缺口，避免微小份额加到 1 时被舍入吞掉。
+        # Express large-weight shares as one minus the shortfall to avoid rounding away tiny shares added to one.
         surplus = pool * len(large) - loss
         surplus += pool * sum((value / (value + middle) for value in small), ZERO)
         surplus -= pool * sum((middle / (value + middle) for value in large), ZERO)
@@ -146,7 +146,7 @@ def break_even_comp(my_weights, pnl_without_reward, pool_usdc_per_week, reward_m
 
 
 def required_pool_per_market(my_weights, pnl_without_reward, comp_weight):
-    """返回盈亏平衡所需的每市场周奖励池；全程不合格时返回 None。"""
+    """Return the weekly pool per market needed to break even, or None if never eligible."""
     weights = _weights(my_weights)
     pnl = _amount(pnl_without_reward, 'pnl_without_reward', signed=True)
     comp = _amount(comp_weight, 'comp_weight')

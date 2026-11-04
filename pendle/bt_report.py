@@ -1,4 +1,4 @@
-"""历史回测的中文报告；事后 markout 不参与交易或奖励判定。"""
+"""Chinese historical backtest reports; retrospective markouts do not affect trading or reward decisions."""
 
 from bisect import bisect_left, bisect_right
 from collections import defaultdict
@@ -62,13 +62,13 @@ def _at_ns(row):
 
 
 def beijing_bucket(time_ms):
-    """返回工作日或周末及北京时间小时；星期一为零。"""
+    """Return weekday/weekend status and the Beijing-time hour; weekday numbering starts at zero for Monday."""
     dt = datetime.fromtimestamp(time_ms / 1000, BEIJING)
     return ('weekend' if dt.weekday() >= 5 else 'weekday', dt.hour)
 
 
 def in_named_period(time_ms, period):
-    """命名时段按星期环处理，起点包含、终点排除，支持跨周。"""
+    """Treat named periods as weekly cycles with inclusive starts and exclusive ends, including week wraparound."""
     dt = datetime.fromtimestamp(time_ms / 1000, BEIJING)
     current = dt.weekday() * 86400 + dt.hour * 3600 + dt.minute * 60 + dt.second
     start = period['start_weekday'] * 86400 + period['start_hour'] * 3600
@@ -96,7 +96,7 @@ def _top_depth(row):
 
 
 def _band_unavailable_reason(observations, settings):
-    """按标的校验整个观测集合，禁止混用不同 band 的竞争量。"""
+    """Validate each asset's full observation set without mixing competition across different bands."""
     for row in observations:
         payload = row.get('payload')
         band = row.get('band_bps', payload.get('band_bps') if isinstance(payload, dict) else None)
@@ -115,7 +115,7 @@ def _band_unavailable_reason(observations, settings):
 
 
 def competition_report(observations, settings):
-    """按市场、北京时间小时及日类型排名；没有观测的桶显式列为缺失。"""
+    """Rank by market, Beijing-time hour, and day type; explicitly mark buckets without observations as missing."""
     observations = list(observations)
     groups = defaultdict(list)
     for row in observations:
@@ -181,7 +181,7 @@ def _markout_stats(fills, samples):
 
 
 def _markouts(fills, prices, end_ms, max_ref_age_s, markout_max_delay_s=1800):
-    """中心缺失时使用上限内首个后续有效中心；延后估计只用于事后分析。"""
+    """If the center price is missing, use the first later valid value within the delay limit, solely for retrospective analysis."""
     times = [_at_ns(row) for row in prices]
     valid = [(at, row) for at, row in zip(times, prices) if row.get('price') is not None]
     valid_times = [at for at, _ in valid]
@@ -194,7 +194,7 @@ def _markouts(fills, prices, end_ms, max_ref_age_s, markout_max_delay_s=1800):
             if target >= end_ms * 1000000:
                 continue
             row = prices[i] if i >= 0 else {}
-            # 旧格式没有显式失效事件，保留其参考年龄门槛。
+            # Legacy formats lack explicit invalidation events, so retain their reference-age threshold.
             stale = (i >= 0 and 'time_ns' not in row and
                      target - times[i] > max_ref_age_s * 1000000000)
             center_row, center_at = ({} if stale else row), (times[i] if i >= 0 else None)
@@ -229,7 +229,7 @@ def _markouts(fills, prices, end_ms, max_ref_age_s, markout_max_delay_s=1800):
 
 
 def _fallback_binance_markouts(fills, prices, end_ms, markout_max_delay_s):
-    """辅助口径只接受目标时刻起第一个显式币安推算中心。"""
+    """The auxiliary metric uses only the first explicit Binance-derived center price at or after the target time."""
     fallback_fills = [fill for fill in fills if fill.get('ref_fallback')]
     candidates = [row for row in prices if row.get('center_source') == 'binance_basis'
                   and row.get('price') is not None and not row.get('ref_fallback')]
@@ -255,7 +255,7 @@ def _fallback_binance_markouts(fills, prices, end_ms, markout_max_delay_s):
 
 
 def _fallback_binance_stats(fills, samples):
-    """独立输出辅助 markout，避免混入主口径的逐笔逆向选择。"""
+    """Report auxiliary markouts separately from per-fill adverse selection in the primary metric."""
     stats = {key: value for key, value in _markout_stats(fills, samples).items()
              if not key.startswith('binance_')}
     return {**stats, 'reference': 'binance_basis',
@@ -263,7 +263,7 @@ def _fallback_binance_stats(fills, samples):
 
 
 def _decomposition(fills, samples, mark, costs):
-    """缺失保留为不可判定，已观测部分不会代替完整 edge。"""
+    """Keep missing values indeterminate; observed components cannot stand in for the complete edge."""
     spread = sum(((1 if fill['side'] == 'buy' else -1) *
                   (_d(fill['center']) - _d(fill['price'])) * _d(fill['quantity'])
                   for fill in fills if fill.get('center') is not None), ZERO)
@@ -332,7 +332,7 @@ def _scenarios(minutes, valuation, settings, observed):
 
 
 def _fallback_metrics(fills, samples, totals, duration, determinate):
-    """回退时间与成交独立披露；共享对冲成本不分摊到成交子集。"""
+    """Report fallback duration and fills separately; do not allocate shared hedging costs to fill subsets."""
     fallback_fills = [fill for fill in fills if fill.get('ref_fallback')]
     fallback_samples = [sample for sample in samples if sample.get('ref_fallback')]
     fees = sum((_d(fill.get('fee', 0)) for fill in fallback_fills), ZERO)
@@ -349,7 +349,7 @@ def _fallback_metrics(fills, samples, totals, duration, determinate):
 
 
 def _error_minutes(minutes, error, settings):
-    """误差情景采用回放保存的真实挂单权重，旧结果缺失时保持未知。"""
+    """Use replay-recorded order weights for error scenarios; leave unavailable legacy results unknown."""
     output = []
     for minute in minutes:
         weights = {_d(key): _d(value) for key, value in
@@ -371,7 +371,7 @@ def _reward_error_scenarios(minutes, valuation, settings, observed):
 
 
 def _collections(result, prices, settings, markout_samples):
-    """一次分发到小时桶和命名时段，不按分钟重扫逐笔历史。"""
+    """Distribute to hourly buckets and named periods in one pass rather than rescanning trade history per minute."""
     groups = defaultdict(lambda: defaultdict(list))
 
     def keys(at):
@@ -526,7 +526,7 @@ def _compare_comp(comp, c_star):
 
 
 def _weekday_proxy(observations, settings, minutes, weekend):
-    """工作日 05:00–21:30 的同权重实测竞争量用于周末恒定情景。"""
+    """Use observed weekday competition from 05:00 to 21:30 with the same weighting for constant weekend scenarios."""
     reason = _band_unavailable_reason(observations, settings)
     samples = []
     for row in observations:
@@ -599,7 +599,7 @@ def _sensitivity(result, alternatives, settings):
 
 
 def build_report(result, settings, *, depth_observations=(), binance_trades=(), sensitivity=()):
-    """汇总单标的回放结果，金额保留 Decimal，交由调用方序列化。"""
+    """Summarize one asset's replay, retaining Decimal amounts for caller-side serialization."""
     market = result['symbol'] + '-USD.P'
     observations = [row for row in depth_observations if row['market'] == market]
     band_reason = _band_unavailable_reason(observations, settings)
@@ -742,7 +742,7 @@ def _comparison(value):
 
 
 def markdown_summary(reports):
-    """首表比较回退与对冲模式，详细章节只展开默认回退口径。"""
+    """Compare fallback and hedge modes in the first table; detailed sections cover only the default fallback metric."""
     if isinstance(reports, dict):
         reports = reports.get('reports', [reports])
     lines = ['# 历史奖励回测摘要', '',
@@ -953,7 +953,7 @@ def markdown_summary(reports):
 
 
 def competition_markdown(report):
-    """输出按估算小时奖励排序的完整排名，保留无观测的小时。"""
+    """Output the full ranking by estimated hourly rewards, including hours without observations."""
     lines = ['# 盘口竞争排名', '',
              '按估算每小时奖励从高到低排序，工作日与周末分别分桶；P90 使用最近秩法。', '',
              '采集时段：' + _iso(report.get('coverage_start_ms')) + ' 至 '

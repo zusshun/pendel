@@ -1,4 +1,4 @@
-"""保存研究会话及逐次采样，回放以只读方式打开。"""
+"""Store research sessions and individual samples; open read-only for replay."""
 
 import json
 import sqlite3
@@ -110,6 +110,6 @@ class Store:
             yield Sample.from_dict(json.loads(sample['payload']))
 
     def load_run(self, run_id=None):
-        """小型测试／交互读取；命令行回放使用迭代接口。"""
+        """Read small datasets for tests or interactive use; command-line replay uses the iterator API."""
         run = self.get_run(run_id)
         return run, list(self.iter_samples(run['id']))

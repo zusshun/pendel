@@ -1,4 +1,4 @@
-"""从公开消息的替身贯通真实采集、gzip、CLI 导入与断档回测。"""
+"""Test real collection, gzip archiving, CLI import, and gap-aware backtests end to end using public message substitutes."""
 
 import asyncio
 import contextlib
@@ -67,7 +67,7 @@ class FakeHTTP:
 
 
 class FakeTimeline:
-    """下一条消息等上一来源处理完毕，虚拟时钟不会在处理途中前跳。"""
+    """Wait for the previous source to finish processing before the next message so the virtual clock cannot jump ahead mid-processing."""
 
     def __init__(self, clock):
         self.clock, self.condition = clock, asyncio.Condition()
@@ -176,7 +176,7 @@ class CollectIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 closed = list(store.iter_collector_gaps(source='ondo', market='*', channel='*'))
                 self.assertTrue(any(row['start_ms'] == BASE + 10000 and
                                     row['end_ms'] == BASE + 40000 for row in closed))
-            # 采集替身原本只有主动买单；回测单独补足双边中点预热，保留采集断言。
+            # The collector substitute supplies only taker buys; add two-sided midpoint warmup for the backtest while preserving collection assertions.
             with HistoryStore(db) as store:
                 store.upsert_ondo_trades([dict(id='b3-opposite-seed', market='INTC-USD.P',
                     time=iso(BASE), price='100', size='1', cost='100', aggressor_side='sell')])

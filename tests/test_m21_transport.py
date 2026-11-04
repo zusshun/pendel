@@ -1,4 +1,4 @@
-"""M21 已取得 HTTP 状态后的响应解析失败必须保留真实状态。"""
+"""M21 response parsing failures must preserve the actual HTTP status once received."""
 
 import unittest
 

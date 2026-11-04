@@ -1,4 +1,4 @@
-"""告警与外部心跳的纯内存测试。"""
+"""In-memory tests for alerts and external heartbeats."""
 
 import asyncio
 import json

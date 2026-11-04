@@ -1,4 +1,4 @@
-"""M7 硬上限减仓每轮使用新鲜中心价，复用真实编排器和内存交易所。"""
+"""M7 hard-limit position reduction uses a fresh center price each round with the real orchestrator and an in-memory exchange."""
 
 import unittest
 from decimal import Decimal as D

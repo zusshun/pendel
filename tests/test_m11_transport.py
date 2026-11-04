@@ -1,4 +1,4 @@
-"""通过真实 WS 适配器验证故障诊断；全部网络依赖使用内存替身。"""
+"""Verify failure diagnostics through the real WS adapter with in-memory substitutes for all network dependencies."""
 
 import json
 import logging

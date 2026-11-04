@@ -1,4 +1,4 @@
-"""报告的北京时间、奖励边界与事后分析行为测试。"""
+"""Report behavior tests for Beijing time, reward boundaries, and post-hoc analysis."""
 
 import importlib
 import importlib.util

@@ -1,4 +1,4 @@
-"""B4 分侧基差、参考价回退及事件时间因果回归。"""
+"""B4 regressions for per-side basis, reference price fallback, and event-time causality."""
 
 import unittest
 from dataclasses import replace
@@ -95,8 +95,8 @@ class B4BacktestTests(unittest.TestCase):
         cancellations = [event['time_ms'] for event in result['events']
                          if event['type'] == 'cancel_requested']
         self.assertTrue(cancellations)
-        # 500ms 旧段的撤单本应在 10500ms 到期，但回退已使它失效。
-        # 新段从 5500ms 开始；后续触发延长冷却，不能推迟本段首次撤单。
+        # The old segment starting at 500ms would cancel at 10500ms, but fallback has invalidated it.
+        # The new segment starts at 5500ms; later triggers extend cooldown but must not delay its first cancellation.
         self.assertEqual(min(cancellations), 15500)
 
     def test_fallback_trade_labels_and_edge_are_cumulative_at_boundaries(self):
@@ -113,8 +113,8 @@ class B4BacktestTests(unittest.TestCase):
         self.assertEqual(result['minutes'][-1]['fallback_ms'], D('58999.999999'))
 
     def test_stale_visible_reference_cannot_trigger_pickoff_in_fallback(self):
-        # 旧买样本到期令回退中心升至 102.5，旧卖单 102.01 已有套利空间。
-        # 迟到且过期的币安消息不能据此把回退中心当作外部可套利参考价。
+        # Expiry of the old buy sample raises the fallback center to 102.5, making the old ask at 102.01 arbitrageable.
+        # A late, expired Binance message must not make the fallback center an external arbitrage reference.
         result = run_backtest([ondo(0, '99'),
             ondo(500, '99', side='sell', ident='sell'),
             ondo(500, '107', ident='buy'), ondo(1000, '105')], [bn(0), bn(1600)],

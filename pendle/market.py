@@ -1,4 +1,4 @@
-"""公开行情 GET 与盘口规范化；本模块不含交易或认证路径。"""
+"""Public market-data GET requests and order book normalization, without trading or authentication paths."""
 
 import json
 import math
@@ -12,7 +12,7 @@ from email.utils import parsedate_to_datetime
 
 
 class MarketError(ValueError):
-    """公开行情不可用或格式不符合预期。"""
+    """Public market data is unavailable or has an unexpected format."""
 
 
 class RateLimited(MarketError):

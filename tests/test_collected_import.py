@@ -1,4 +1,4 @@
-"""采集归档按完整行恢复，并通过自然主键幂等导入。"""
+"""Recover complete lines from collected archives and import them idempotently using natural keys."""
 
 import gzip
 import importlib.util

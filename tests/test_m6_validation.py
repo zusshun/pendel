@@ -1,4 +1,4 @@
-"""M6：旧单保留与同价同剩量新意图复用完整发送前复核。"""
+"""M6: order retention and new intents at the same price and remaining quantity share full pre-send validation."""
 
 import random
 import unittest
@@ -154,7 +154,7 @@ class M6ValidationPropertyTests(unittest.TestCase):
                 third_party = book(bids=bids, asks=asks)
                 bot.book, bot.book_seen = third_party, clock()
                 if case % 3 == 0:
-                    # 保证覆盖真实可发送报价，而非所有随机样本都被拒绝。
+                    # Ensure coverage includes valid sendable quotes rather than rejecting every random sample.
                     bot.engine.mark = (center, clock())
                     engine = copy(bot.engine)
                     decision = engine.evaluate(third_party, bot.state, rules, now=clock(), guard_only=True)
@@ -172,7 +172,7 @@ class M6ValidationPropertyTests(unittest.TestCase):
                             reduce_only=reduce_only, post_only=post_only, filled=filled,
                             status=OrderStatus.PARTIAL if filled else OrderStatus.OPEN, exchange_ms=100000)
                 bot.state.orders[old.client_order_id] = old
-                # 其他同侧或反侧活单须继续占用容量，不能随候选单一起排除。
+                # Other active orders on either side must still consume capacity rather than being excluded with the candidate.
                 other_side = rng.choice(('buy', 'sell'))
                 other = Order('other', MARKET, other_side, D(rng.randrange(1, 1501))/1000,
                               center+(-D('.18') if other_side == 'buy' else D('.18')),
@@ -184,7 +184,7 @@ class M6ValidationPropertyTests(unittest.TestCase):
                 bot.book_seen = clock()
                 public_book = bot.book
                 retained = self.permitted(lambda: bot.validate_resting_or_pending(old, bot.state, now=clock()))
-                # 替换为尚未公开的新意图：移除旧单公开剩量，保持相同第三方盘口和其他活单。
+                # Replace with an unpublished new intent: remove the old order's public remaining quantity while keeping the third-party book and other active orders unchanged.
                 snapshot = copy(bot.state)
                 intent = replace(old, quantity=remaining, filled=D(0), status=OrderStatus.INTENT)
                 snapshot.orders = {**bot.state.orders, old.client_order_id: intent}

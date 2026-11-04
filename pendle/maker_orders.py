@@ -1,7 +1,7 @@
-"""实盘订单的唯一状态源、同步屏障与确认撤单流程。
+"""Single source of truth for live orders, synchronization barriers, and confirmed cancellation.
 
-交易所输入使用规范化字段；无时间戳持仓采用 quiet 期与一致性复核。
-本模块不建立网络连接，所有发送由注入的 API 执行。
+Exchange inputs use normalized fields; untimed positions require a quiet period and consistency checks.
+This module opens no network connections; an injected API performs all sends.
 """
 
 import asyncio
@@ -20,11 +20,11 @@ from .ondo_api import exchange_time_ms
 
 
 class OrdersBlocked(ValueError):
-    """当前状态禁止新增订单。"""
+    """The current state blocks new orders."""
 
 
 class OrderStateError(ValueError):
-    """订单事件或状态转移无效。"""
+    """An order event or state transition is invalid."""
 
 
 class OrderStatus(str, Enum):
@@ -83,7 +83,7 @@ class Order:
 
 
 class AccountState:
-    """仅在同一 asyncio 事件循环同步更新，更新方法中没有 await。"""
+    """Update synchronously within one asyncio event loop; update methods contain no await."""
 
     def __init__(self, markets, *, monotonic=time.monotonic):
         self.markets = tuple(markets)
@@ -102,7 +102,7 @@ class AccountState:
         self.modes = {market: 'SYNCING' for market in self.markets}
         self.sync_reasons = {}
         self.revision = 0
-        # 核零只关注目标市场的订单与持仓输入，不受余额或其他市场推送干扰。
+        # Verification of zero open orders tracks only target-market orders and positions, unaffected by balances or other markets.
         self.market_revisions = {market: 0 for market in self.markets}
         self.monotonic = monotonic
         self.last_fill_monotonic = {market: None for market in self.markets}
@@ -133,7 +133,7 @@ class AccountState:
             raise OrdersBlocked('同步或停止屏障禁止新增订单')
 
     def has_unaccounted_fills(self, market):
-        """订单累计成交先到时，不得在成交或持仓入账之前释放风险预算。"""
+        """When cumulative order fills arrive first, retain risk budget until fills or positions account for them."""
         watermark = self.position_bases[market][1]
         for order in self.orders.values():
             covered_at, covered_quantity = self._position_order_coverage.get(
@@ -152,13 +152,13 @@ class AccountState:
                      if not order.terminal and (market is None or order.market == market))
 
     def note_position_event(self, market, position=None):
-        """私有持仓内容变化才使核零失效；快照仍由 quiet 后的 REST 确认。"""
+        """Only private position content changes invalidate verification of zero open orders; REST confirms snapshots after a quiet period."""
         if position is not None:
-            # 推送时间只表示重复观测，不能视为持仓内容变化。
+            # Push timestamps only indicate repeated observations, not changes to position content.
             content = {key: value for key, value in position.items()
                        if key not in ('time_ms', 'time', 'timestamp')}
             confirmed = self.position_details.get(market, {})
-            # 缓存相同还须与当前数量、REST 已确认明细一致，避免吞掉旧内容。
+            # Matching cache content must also match current quantity and REST-confirmed details, so stale content is not ignored.
             if (self._position_event_contents.get(market) == content
                     and number(position['quantity']) == self.positions[market]
                     and all(value == confirmed[key] for key, value in content.items()
@@ -195,7 +195,7 @@ class AccountState:
         return True
 
     def apply_untimed_position_snapshot(self, market, quantity):
-        """仅由 quiet 期内无并发私有更新的 REST 对账调用。"""
+        """Called only by REST reconciliation with no concurrent private updates during the quiet period."""
         quantity = number(quantity)
         if quantity != self.positions[market]:
             self._position_event_contents.pop(market, None)
@@ -309,7 +309,7 @@ class AccountState:
         if known_cid is not None and known_cid != cid:
             known = self.orders[known_cid]
             if known.exchange_only and cid not in self.orders:
-                # 遗留单后续恢复携带客户端标识时，仍沿用已确认的交易所标识。
+                # Keep the confirmed exchange ID when a legacy order later recovers its client ID.
                 cid = known_cid
             else:
                 self.begin_sync(market, '交易所订单标识冲突')
@@ -329,7 +329,7 @@ class AccountState:
         if at < order.exchange_ms:
             return order
         if at == order.exchange_ms:
-            # 毫秒截断会合并多次更新：保留终态和最大累计成交，最后才比较来源。
+            # Millisecond truncation merges updates: preserve terminal states and maximum cumulative fills before comparing sources.
             if order.terminal and status not in TERMINAL:
                 status = order.status
             filled = max(filled, order.event_filled)
@@ -374,7 +374,7 @@ def _timestamp(value):
 
 
 def _order_event_ms(row, timestamp=None):
-    """订单生命周期和 WS 外层时间取最大值，兼容内部规范化的旧毫秒输入。"""
+    """Take the latest order-lifecycle or outer WS time, with fallback to legacy normalized millisecond input."""
     values = [row[key] for key in ('createdAt', 'filledAt', 'canceledAt')
               if row.get(key) is not None]
     if timestamp is not None:
@@ -393,7 +393,7 @@ async def _warn_rejection(reason):
 
 
 async def _wait_cleanup(task):
-    """重复取消也不中断安全清理，完成后再向调用方传播取消。"""
+    """Shield safety cleanup from repeated cancellation, then propagate cancellation to the caller."""
     cancelled = False
     while True:
         try:
@@ -409,10 +409,10 @@ async def _wait_cleanup(task):
 
 
 class OrderManager:
-    """API 适配器必须返回规范化订单；risk_check 在实际发送前同步执行。
+    """API adapters must return normalized orders; run risk_check synchronously immediately before sending.
 
-    risk_check(order, account_state) 应在拒绝时抛异常，并在累计风险输入中
-    排除本次 order（其余 INTENT 也必须保留）。M2 负责注入风险模块适配。
+    risk_check(order, account_state) must raise on rejection and exclude this order
+    from aggregate risk inputs while retaining all other INTENT orders. M2 injects the risk adapter.
     """
 
     def __init__(self, state, api, *, risk_check, monotonic=time.monotonic,
@@ -489,7 +489,7 @@ class OrderManager:
         return order
 
     async def _wait(self, task, seconds, *, cancel=True):
-        # 先让立即完成的假传输/本地结果运行，不为其启动超时器。
+        # Let immediately completed fake transports or local results run before starting a timeout timer.
         await asyncio.sleep(0)
         if task.done():
             return task.result()
@@ -585,7 +585,7 @@ class OrderManager:
             return False
         if not self._halting:
             self._block_halt()
-            # 当前停止任务先退出；熔断锁落盘后再开始一轮停止，避免自等待。
+            # Let the current stop task exit, then start another stop after persisting the halt lock to avoid self-waiting.
             self._track(asyncio.create_task(self.halt('停止流程返回立即熔断类错误')))
             return True
         return False
@@ -697,7 +697,7 @@ class OrderManager:
             if found is not None:
                 await self.handle_order_event(found, source='rest')
                 return True
-            # 仍在执行的下单协程可能比撤单更晚受理，不能据一次空快照确认不存在。
+            # An in-flight order coroutine may be accepted after cancellation; one empty snapshot cannot prove absence.
             pending = self.pending.get(order.client_order_id)
             if ((pending is not None and not pending.done())
                     or getattr(self.api, 'in_flight_writes', 0)):
@@ -734,7 +734,7 @@ class OrderManager:
                        else self.api.cancel_order(order.client_order_id))
             await self._call(request)
         except Exception as exc:
-            # 撤单响应不是终态证据；404、已终结或超时均需查询/私有确认。
+            # Cancellation responses do not prove a terminal state; 404, already closed, and timeout cases need query or private confirmation.
             self.state.begin_sync(order.market, '撤单结果待确认')
             await self._handle_error(exc, '撤单返回立即熔断类错误')
         return order.terminal
@@ -837,7 +837,7 @@ class OrderManager:
             matches = [row for row in positions if row['market'] == market]
             if len(matches) > 1:
                 raise OrderStateError('持仓快照中同一市场不得重复')
-            # 完整快照省略零持仓；合成无时间戳的中性零仓，沿用 quiet 复核屏障。
+            # Full snapshots omit zero positions; synthesize an untimed neutral zero position and retain the quiet-period verification barrier.
             pos = matches[0] if matches else {
                 'market': market, 'direction': 'neutral', 'quantity': Decimal(0),
                 'unrealized_pnl': Decimal(0)}
@@ -873,7 +873,7 @@ class OrderManager:
             return False
 
     def confirm_local_stop(self):
-        """仅供不发送写请求的 dry-run 在本地确认停止，不触发 API 或告警。"""
+        """Confirm a local stop only for dry-run without write requests; invoke no API or alerts."""
         self.state.stopping = True
         for market in self.state.markets:
             self.state.modes[market] = 'STOPPING'
@@ -896,7 +896,7 @@ class OrderManager:
     async def _finish_stop(self, task, reason):
         stopped = await task
         if stopped is not True:
-            # 等停止任务退出后才全局熔断，避免熔断清理再次停止时等待自身。
+            # Wait for the stop task to exit before a global halt so halt cleanup cannot wait on itself when stopping again.
             await self.stop_failed(reason)
             if self.stop_failed is _ignore:
                 await self.alert('停止流程无法确认清空，等待死人开关并紧急告警')
@@ -932,7 +932,7 @@ class OrderManager:
                             rows = await self._call(self.api.get_open_orders(market, stop=True))
                             if not isinstance(rows, list):
                                 raise OrderStateError('停止核实必须得到完整挂单列表')
-                            # 先全撤已受理订单，再等待在途写入；延迟受理由后续轮次补撤。
+                            # Cancel accepted orders first, then wait for in-flight writes; later rounds cancel delayed acceptances.
                             if not waited_for_writes:
                                 waited_for_writes = True
                                 writes = [task for task in self.pending.values() if not task.done()]
@@ -942,7 +942,7 @@ class OrderManager:
                                         await self._wait(waiting, self.request_timeout_s, cancel=False)
                                     except TimeoutError:
                                         pass
-                            # 等待期间 SENT 可能变成 UNKNOWN，也必须保留消歧要求。
+                            # SENT may become UNKNOWN while waiting; preserve the requirement to resolve its state.
                             unknowns.update((order.client_order_id, order)
                                 for order in self.state.active_orders() if order.status == OrderStatus.UNKNOWN)
                             inflight = (any(not task.done() for task in self.pending.values())
@@ -955,7 +955,7 @@ class OrderManager:
                                     if not can_query:
                                         unresolved = True
                                         continue
-                                    # 空挂单快照后仍用两次 cid 查询确认 UNKNOWN，不能以单次空列表释放风险。
+                                    # After an empty open-order snapshot, confirm UNKNOWN with two cid queries; one empty list cannot release risk.
                                     absent = True
                                     for _proof in range(2):
                                         proof_revision = self.state.market_revisions[market]
@@ -973,7 +973,7 @@ class OrderManager:
                                     if absent and order.status == OrderStatus.UNKNOWN:
                                         order.status, order.confirmed_absent = OrderStatus.ABSENT, True
                                     elif absent:
-                                        # 迟到 ACK 可把 UNKNOWN 改成 OPEN；双查询和核零仍能证明它已撤。
+                                        # A late ACK may turn UNKNOWN into OPEN; dual queries and verification of zero open orders still prove cancellation.
                                         order.status = OrderStatus.CANCELED
                                 if unresolved:
                                     continue
@@ -988,13 +988,13 @@ class OrderManager:
                                 scheduled_halt = self._halt_after_stop_error(exc)
                                 return False
                     all_empty = all_empty and empty
-                # 每市场累计最多三次全撤；后续市场等待或末尾告警使旧证据失效时复用剩余预算。
+                # Allow at most three cancel-all attempts per market; reuse the remaining budget if later market waits or final alerts invalidate earlier evidence.
                 if not all_empty:
                     return False
                 if not all(zero_evidence_valid(market) for market in self.state.markets):
                     continue
                 await self.alert('停止流程已核实挂单为零')
-                # 最终检查与成功返回之间不能再 await，避免告警期间迟到事件留下挂单。
+                # Do not await between the final check and successful return; late events during alerts could leave open orders.
                 if all(zero_evidence_valid(market) for market in self.state.markets):
                     return True
         finally:
@@ -1002,7 +1002,7 @@ class OrderManager:
                 gate.finish_stop()
 
     async def drain(self):
-        """退出前回收已结束的写请求；不把本地取消误当交易所撤单。"""
+        """Reap completed write requests before exit; local cancellation does not count as exchange cancellation."""
         tasks = [task for task in self.pending.values() if task.done()]
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
@@ -1016,7 +1016,7 @@ class OrderManager:
         return not self.pending
 
     async def check_timeouts(self):
-        """OrderManager 心跳循环调用；UNKNOWN 的绝对时限不因重试重新计时。"""
+        """Called by the OrderManager heartbeat loop; retries do not reset the absolute UNKNOWN deadline."""
         for order in self.state.active_orders():
             if order.unknown_since is not None and order.status == OrderStatus.UNKNOWN:
                 await self._unknown_expired(order, order.unknown_since + self.unknown_timeout_s)
@@ -1025,7 +1025,7 @@ class OrderManager:
                 await self.confirm_cancel(order)
 
     def prepare_resume(self):
-        """守卫稳定后调用；只撤销停止屏障，随后仍必须重新对账。"""
+        """Called after guard stabilization; remove only the stop barrier, then require reconciliation again."""
         gate = getattr(self.api, 'gate', None)
         if (self._stop_task is None or not self._stop_task.done() or self._stop_task.cancelled()
                 or self._stop_task.exception() is not None or self._stop_task.result() is not True

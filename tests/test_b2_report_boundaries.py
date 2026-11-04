@@ -1,4 +1,4 @@
-"""B2 报告在真实时长、代理竞争量和部分缺样上的边界验证。"""
+"""B2 report boundary tests for actual duration, proxy competing volume, and partially missing samples."""
 
 import copy
 import unittest

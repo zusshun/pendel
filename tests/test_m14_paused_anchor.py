@@ -1,4 +1,4 @@
-"""停报不冻结有效中心的超慢锚，无效行情不得推动锚。"""
+"""Paused quoting does not freeze the ultra-slow anchor for valid centers; invalid market data must not advance it."""
 
 import unittest
 from copy import copy
@@ -57,7 +57,7 @@ class M14PausedAnchorTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_outside_window_pause_keeps_updating_fresh_center_slow_anchor(self):
         bot, clock = await self.make_bot()
-        clock.epoch += 2*24*3600  # 周一窗口结束后仍有新鲜行情。
+        clock.epoch += 2*24*3600  # Fresh market data remains available after the Monday window ends.
         self.refresh(bot, clock, '101')
         await bot.tick()
         self.assertAlmostEqual(float(bot.engine.slow_anchor), 100.6321205588, places=9)

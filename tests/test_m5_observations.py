@@ -1,4 +1,4 @@
-"""M5 标定观测使用虚拟时钟与内存日志，不连接网络。"""
+"""M5 calibration observations use a virtual clock and in-memory logs without network access."""
 
 import json
 import unittest

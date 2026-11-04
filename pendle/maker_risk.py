@@ -1,4 +1,4 @@
-"""实盘做市的同步风险检查、持久熔断和存活监督。"""
+"""Synchronous risk checks, persistent halts, and liveness supervision for live market making."""
 
 import asyncio
 import fcntl
@@ -12,11 +12,11 @@ from decimal import Decimal, InvalidOperation, ROUND_FLOOR
 
 
 class RiskError(ValueError):
-    """风险输入或持久状态无效，调用方必须停止新增。"""
+    """Risk inputs or persistent state are invalid; the caller must stop adding orders."""
 
 
 class RiskRejected(RiskError):
-    """本次拟下单超过风险预算。"""
+    """The proposed order exceeds the risk budget."""
 
 
 def _decimal(value, *, positive=False, nonnegative=False):
@@ -110,7 +110,7 @@ class RiskReport:
 
 
 class RiskManager:
-    """输入使用同一同步快照；检查后到发单前不得让出事件循环。"""
+    """Use one synchronous input snapshot; do not yield between checking and sending."""
 
     def __init__(self, limits=None):
         self.limits = limits or RiskLimits()
@@ -137,13 +137,13 @@ class RiskManager:
 
     @staticmethod
     def _margin(states, exposures):
-        # 待沙盒核实：市场保证金按两侧最大名义值乘初始率，再加浮亏；浮盈不抵扣。
+        # Pending sandbox verification: market margin uses the larger side notional times the initial rate, plus unrealized losses; profits do not offset it.
         return sum((exposures[name] * row.initial_margin_rate
                     + max(Decimal(0), -row.unrealized_pnl)
                     for name, row in states.items()), Decimal(0))
 
     def worst_exposures(self, markets, orders):
-        """各市场两侧最坏名义值取大；不同市场不相互净抵消。"""
+        """Use the larger worst-case side notional per market; never net different markets against one another."""
         _, sides = self._snapshot(markets, orders)
         return self._exposures(sides)
 
@@ -173,13 +173,13 @@ class RiskManager:
         exposures = self._exposures(sides)
         account = sum(exposures.values(), Decimal(0))
         margin = self._margin(states, exposures)
-        # 已超限时只豁免无其他活单的真实减仓；两侧最坏端点与保证金均不能新增。
+        # When already over limit, exempt only genuine reductions with no other active orders; neither worst-case side endpoint nor margin may increase.
         safe_reduction = (reduce_only and not any(order.state in ACTIVE_STATES for order in orders)
             and margin <= previous_margin and all(
                 max(Decimal(0), endpoints[0]) <= max(Decimal(0), previous_sides[name][0])
                 and max(Decimal(0), -endpoints[1]) <= max(Decimal(0), -previous_sides[name][1])
                 for name, endpoints in sides.items()))
-        # 实际发送时重算两侧最终端点，反手报价也不得越过硬减仓阈值。
+        # Recompute both final endpoints at send time; reversal quotes must also respect the hard reduction threshold.
         if not safe_reduction and any(value > self.limits.hard_cap_usd for value in exposures.values()):
             raise RiskRejected('两侧最终持仓敞口超过硬上限')
         if not safe_reduction and any(value > self.limits.max_position_usd for value in exposures.values()):
@@ -196,7 +196,7 @@ class RiskManager:
 
     def limit_adding_quantity(self, market, side, desired, base_increment, markets, orders,
                               *, price=None):
-        """按该侧最终有符号端点限量，反手部分也保留一个最小单位。"""
+        """Limit quantity by the final signed endpoint on this side, retaining one minimum unit for the reversal portion."""
         side = _side(side)
         desired = _decimal(desired, nonnegative=True)
         increment = _decimal(base_increment, positive=True)
@@ -205,7 +205,7 @@ class RiskManager:
             raise RiskError('加仓限量缺少市场估值')
         row = states[market]
         valuation = max(row.mark_price, _decimal(price, positive=True)) if price is not None else row.mark_price
-        # 负端点代表先减仓的空间，不截为零，以保留真正减仓的可用数量。
+        # Negative endpoints represent room to reduce first; do not clamp to zero and discard genuine reduction capacity.
         current = sides[market][0 if side == 'buy' else 1] * (1 if side == 'buy' else -1)
         budget = (self.limits.hard_cap_usd - current) / valuation - increment
         desired = min(desired, max(Decimal(0), budget))
@@ -213,11 +213,11 @@ class RiskManager:
 
 
 class AlreadyRunning(RiskError):
-    """同一账户已经有运行实例。"""
+    """Another instance is already running for this account."""
 
 
 class DurableFiles:
-    """所有文件操作经注入的 os/flock；写入完成包括父目录的 fsync。"""
+    """Inject os/flock for all file operations; completed writes include fsync of the parent directory."""
 
     def __init__(self, *, fs=os, flock=fcntl.flock):
         self.fs, self.flock = fs, flock
@@ -274,7 +274,7 @@ class DurableFiles:
                 self.fs.replace(temporary, path)
             self._sync_directory(parent)
         except BaseException:
-            # 熔断残片也必须保留：重启时只要文件存在就拒绝交易。
+            # Retain even partial halt files: any existing file must block trading after restart.
             if not exclusive:
                 try:
                     self.fs.unlink(temporary)
@@ -333,7 +333,7 @@ class SingleInstanceLock:
 
 
 class WindowLossLedger:
-    """窗口由调用方明确标识，午夜和进程重启均不会隐式归零。"""
+    """The caller explicitly identifies windows; midnight and process restarts never reset them implicitly."""
 
     def __init__(self, window_id, path, *, files=None):
         self.window_id, self.path = _name(window_id), path
@@ -363,7 +363,7 @@ class WindowLossLedger:
 
     def record(self, event_id, *, realized_pnl=0, fee=0, funding=0):
         _name(event_id)
-        # 待沙盒核实：手续费正数为支出、负数为返佣；资金费正数为收入。
+        # Pending sandbox verification: positive fees mean expense, negative fees mean rebates, and positive funding means income.
         event = (_decimal(realized_pnl), _decimal(fee), _decimal(funding))
         if event_id in self.events:
             if self.events[event_id] != event:
@@ -406,7 +406,7 @@ def _seconds(value):
 
 
 async def _wait_cleanup(task):
-    """重复取消也不传播给清理任务；清理完成后再交还调用方的取消。"""
+    """Shield cleanup from repeated cancellation, then return the pending cancellation to the caller."""
     cancelled = False
     while True:
         try:
@@ -422,7 +422,7 @@ async def _wait_cleanup(task):
 
 
 class Guard:
-    """市场守卫；block/resume 只修改该市场屏障，不重开全局发送闸门。"""
+    """Market guard; block/resume change only this market barrier and never reopen the global send gate."""
 
     def __init__(self, cooldown_s, stable_s, *, stop, block=lambda: None,
                  resume=lambda: None, monotonic=time.monotonic):
@@ -480,7 +480,7 @@ class HaltResult:
 
 
 class HaltController:
-    """先同步封锁新增，再落盘熔断锁；调用方取消不能打断停止清理。"""
+    """Block new orders synchronously, then persist the halt lock; caller cancellation must not interrupt stop cleanup."""
 
     def __init__(self, path, *, gate, stop, alert, files=None, clock=time.time,
                  monitor_after_halt=False):
@@ -503,7 +503,7 @@ class HaltController:
         except Exception as exc:
             errors.append('停止流程失败：' + type(exc).__name__)
         finally:
-            # 监控只在锁已持久化且挂单确认清空时保留；不能恢复已被 Watchdog 关闭的闸门。
+            # Keep monitoring only after the lock is persisted and orders are confirmed absent; never reopen a gate closed by Watchdog.
             if (not self.monitor_after_halt or not persisted or not stopped
                     or not self.gate.is_open):
                 self.gate.finish_stop()
@@ -527,7 +527,7 @@ class HaltController:
                 persisted = True
             except Exception as exc:
                 errors.append('熔断锁持久化失败：' + type(exc).__name__)
-            # 失败停止已耗尽撤单预算：写锁与永久封门之间不可让出，排队 ping/重连也不能穿过。
+            # Failed stopping exhausted the cancellation budget: do not yield between persisting the lock and permanently closing the gate, including for queued pings or reconnects.
             if permanent:
                 self.gate.finish_stop()
             self._task = asyncio.create_task(self._finish(reason, persisted, errors))
@@ -537,7 +537,7 @@ class HaltController:
 
 
 class Watchdog:
-    """只以关键任务心跳和私有 pong 续期；一旦失败，本实例不可恢复发送。"""
+    """Renew only on critical-task heartbeats and private pongs; after failure, this instance can never resume sending."""
 
     def __init__(self, *, gate, stop, ping, alert, reconciler_interval_s,
                  strategy_stale_s=15, order_manager_stale_s=15, private_stale_s=15,
@@ -596,7 +596,7 @@ class Watchdog:
 
     async def _trip(self, reason):
         if not self.tripped:
-            # 此处到创建停止任务之间不 await，普通发送和并发检查立即失效。
+            # Do not await before creating the stop task; ordinary sends and concurrent checks become invalid immediately.
             self.tripped, self.failure_reason = True, reason
             self.gate.close()
             self._stop_task = asyncio.create_task(self._stop(reason))
@@ -632,7 +632,7 @@ class Watchdog:
         return not self.tripped
 
     def _cancel_background(self, task):
-        # 发送者可能不响应取消，不能等待它；所有实际发送仍必须检查同一个闸门。
+        # The sender may ignore cancellation, so do not await it; every actual send must still check the same gate.
         if not task.done():
             task.cancel()
         self._background.add(task)

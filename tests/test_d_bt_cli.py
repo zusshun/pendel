@@ -1,4 +1,4 @@
-"""精度缺失仅拒绝对应标的，其他标的继续产出报告。"""
+"""Missing precision rejects only the affected instrument; other instruments still produce reports."""
 
 import contextlib
 import io

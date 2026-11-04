@@ -1,4 +1,4 @@
-"""M11 重复私有推送与核零回归；仅使用真实样本和内存传输。"""
+"""M11 regressions for duplicate private updates and verification of zero open orders using real samples and in-memory transport."""
 
 import json
 import unittest

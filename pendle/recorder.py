@@ -1,4 +1,4 @@
-"""有限时长录制公开盘口，错误逐样本落库。"""
+"""Record public order books for a bounded duration, storing errors per sample."""
 
 import math
 import time

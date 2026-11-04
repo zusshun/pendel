@@ -1,4 +1,4 @@
-"""导入公开扫描 JSONL，并保存两种奖励权重下的盘口竞争指标。"""
+"""Import public scan JSONL and store order book competition metrics for both reward weightings."""
 
 import hashlib
 import json
@@ -11,7 +11,7 @@ from .reward import distance_bps, quote_weight
 
 def depth_observation(book, *, price_tick='.01', band_bps=25, max_tick=10,
                       source='scan'):
-    """第 k 档以 mid 两侧最近合法价格为第零档，保存数量与 USD 深度。"""
+    """Store quantity and USD depth at level k, taking the nearest valid prices on either side of mid as level zero."""
     tick, band = number(price_tick), number(band_bps)
     if tick <= 0 or band <= 0:
         raise ValueError('price_tick 和 band_bps 必须为正')
@@ -58,7 +58,7 @@ def _scan_error(store, row, error):
 
 def import_scan(src, store, *, price_tick='.01', band_bps=25, max_tick=10,
                  symbol_overrides=None):
-    """逐行导入，只有末尾未结束且无法解析的半行会被跳过。"""
+    """Import line by line, skipping only an incomplete, unparseable final line."""
     src = Path(src)
     paths = sorted(src.glob('*.jsonl')) if src.is_dir() else [src]
     counts = {'contracts': 0, 'depth': 0, 'errors': 0, 'truncated_lines': 0}

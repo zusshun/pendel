@@ -1,4 +1,4 @@
-"""实盘接入的纯内存行为测试，不创建连接或监听端口。"""
+"""In-memory behavior tests for live integration without opening connections or listening on ports."""
 
 import asyncio
 import json
@@ -429,7 +429,7 @@ class ClientTests(unittest.IsolatedAsyncioTestCase):
         callbacks = []
         quote = asyncio.create_task(self.client.place_order({'market': MARKET},
                                     before_send=lambda: callbacks.append('sent')))
-        # 精确停在队列已选出请求、传输任务尚未执行的竞态位置。
+        # Pause exactly where the queue has selected a request but the transport task has not run.
         await asyncio.sleep(0)
         await asyncio.sleep(0)
         self.client._blocked_until = 10

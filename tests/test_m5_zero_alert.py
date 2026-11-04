@@ -1,4 +1,4 @@
-"""M5 核零证据覆盖末尾告警及其他市场等待，且重试预算保持三次。"""
+"""M5 evidence of zero open orders covers final alerts and waits for other markets while preserving the three-attempt retry budget."""
 
 import unittest
 

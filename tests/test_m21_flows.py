@@ -1,4 +1,4 @@
-"""M21：真实成功空正文贯通停止、人工复位与下单结果消歧。"""
+"""M21: real successful empty responses through stopping, manual reset, and order outcome resolution."""
 
 import unittest
 from decimal import Decimal as D

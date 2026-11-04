@@ -1,4 +1,4 @@
-"""M4 停止边界贯通回归；签名队列与告警 HTTP 均使用内存传输。"""
+"""M4 end-to-end stop boundary regressions with in-memory transport for the signing queue and alert HTTP requests."""
 
 import asyncio
 import json
@@ -24,7 +24,7 @@ class M4StopEdgesTests(unittest.IsolatedAsyncioTestCase):
     publish = wiring.M3WiringTests.publish
 
     def trace_transports(self):
-        """记录实际传输顺序，并补齐 CID 查询的远端终态证据。"""
+        """Record the actual transport sequence and provide evidence of the remote terminal state from CID queries."""
         self.events, self.closed = [], {}
         original_transport, original_http = self.bot.api.transport, self.bot.alerter._http
 
@@ -162,7 +162,7 @@ class M4StopEdgesTests(unittest.IsolatedAsyncioTestCase):
     async def test_late_ack_repeats_bulk_cancel_before_ordinary_http(self):
         await self.ready()
         self.trace_transports()
-        # 本地等待先超时，底层传输仍可正常返回迟到 ACK。
+        # The local wait times out first; the underlying transport may still return a valid late ACK.
         self.bot.manager.request_timeout_s = .1
         self.bot.api.timeout_s = 30
         entered, release = asyncio.Event(), asyncio.Event()
@@ -183,7 +183,7 @@ class M4StopEdgesTests(unittest.IsolatedAsyncioTestCase):
             return None
 
         self.bot.api.transport = slow_response
-        # 只隔离停止失败后的进程退出策略，检验订单管理器自身的迟到受理补全撤。
+        # Isolate only the process exit policy after stop failure to test the order manager's own cancellation of late accepted orders.
         self.bot.manager.stop_failed = record_failed_stop
         order = self.bot.manager.create_intent(MARKET, 'buy', '.1', '99.88')
         sending = asyncio.create_task(self.bot.manager.submit(order))
@@ -275,7 +275,7 @@ class M4StopEdgesTests(unittest.IsolatedAsyncioTestCase):
         await self.drive(self.bot.tick())
         self.assert_cancelled_market()
         self.publish()
-        # 撤单不依赖 ACK；后续节拍等待 ACK，不应过早恢复并抛异常。
+        # Cancellation does not require an ACK; later ticks wait for it and must not resume early or raise an exception.
         await self.drive(self.bot.tick())
         self.assertTrue(self.bot.state.stopping)
 

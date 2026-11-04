@@ -1,4 +1,4 @@
-"""M20 私有查询与快照中的空记录语义；全部使用本地模拟传输。"""
+"""M20 empty-record semantics in private queries and snapshots using local mock transport."""
 
 import copy
 import json

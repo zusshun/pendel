@@ -1,4 +1,4 @@
-"""真实传输适配器的纯内存测试；不执行网络调用。"""
+"""In-memory tests for the real transport adapters without network calls."""
 
 import asyncio
 import io

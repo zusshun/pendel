@@ -1,4 +1,4 @@
-"""历史回测和只读采集参数；奖励及执行假设均须由报告披露。"""
+"""Historical backtest and read-only collection settings; reports must disclose reward and execution assumptions."""
 
 import re
 import tomllib
@@ -97,7 +97,7 @@ def _serialise(value):
 
 @dataclass(frozen=True)
 class SymbolSettings:
-    """一个标的的合约身份和价格、数量精度。"""
+    """Contract identity and price and quantity precision for one asset."""
 
     symbol: str
     price_tick: Decimal
@@ -169,7 +169,7 @@ class _CommonSettings:
 
 @dataclass(frozen=True)
 class BacktestSettings(_CommonSettings):
-    """确定性历史回测参数；默认值是研究情景而非官方奖励规则。"""
+    """Deterministic historical backtest settings; defaults represent research scenarios rather than official reward rules."""
 
     symbols: tuple = ('INTC', 'DRAM', 'CRCL')
     quote_center: str = 'binance_basis'
@@ -177,7 +177,7 @@ class BacktestSettings(_CommonSettings):
     quote_offset_bps: Decimal = Decimal('10')
     max_inventory_usd: Decimal = Decimal('1600')
     principal_usd: Decimal = Decimal('1000')
-    # 兼容旧配置键；基差有效性由样本数量和最大年龄控制。
+    # Retain the legacy configuration key; sample count and maximum age determine basis validity.
     basis_window_s: Decimal = Decimal('300')
     basis_pair_max_age_s: Decimal = Decimal('30')
     basis_samples: int = 20
@@ -255,7 +255,7 @@ class BacktestSettings(_CommonSettings):
 
 @dataclass(frozen=True)
 class CollectSettings(_CommonSettings):
-    """公开行情采集参数，HTTP、WS、时钟和等待器由采集服务注入。"""
+    """Public market-data collection settings with HTTP, WS, clocks, and wait functions injected by the collector."""
 
     focus_symbols: tuple = ('INTC', 'DRAM', 'CRCL')
     focus_snapshot_s: Decimal = Decimal('1')
@@ -282,7 +282,7 @@ class CollectSettings(_CommonSettings):
 
     @classmethod
     def from_dict(cls, data):
-        """接受面向部署的 focus_markets，并兼容既有 focus_symbols。"""
+        """Accept deployment-oriented focus_markets while supporting the existing focus_symbols key."""
         if isinstance(data, Mapping) and 'focus_markets' in data:
             data = dict(data)
             markets = _symbols(data.pop('focus_markets'), 'focus_markets')
@@ -293,7 +293,7 @@ class CollectSettings(_CommonSettings):
 
     @property
     def focus_markets(self):
-        """焦点标的代码；Ondo 市场名称由 for_symbol 解析。"""
+        """Focus asset symbols; for_symbol resolves Ondo market names."""
         return self.focus_symbols
 
     def __post_init__(self):

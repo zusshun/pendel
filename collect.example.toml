@@ -1,53 +1,53 @@
-# 只读公开行情采集，无需账户或密钥；复制为 collect.toml 后调整。
-# 焦点标的保存全量盘口、订阅币安成交并轮询 Lighter；Ondo 成交覆盖全市场。
-# 使用大写标的代码，兼容旧键 focus_symbols；两者同时填写时必须一致。
+# Read-only public market data collection; no account or keys required. Copy to collect.toml and adjust.
+# Focus symbols retain full order books, subscribe to Binance trades, and poll Lighter; Ondo trades cover all markets.
+# Use uppercase symbols. The legacy focus_symbols key is supported; both keys must agree if present.
 focus_markets = ["INTC", "DRAM", "CRCL", "WEN", "NKE", "RDDT", "IBM", "DKNG"]
 
-# 焦点盘口全量快照间隔（秒）；全市场派生竞争记录每分钟保存。
+# Full order book snapshot interval for focus markets, in seconds; derived competition records cover all markets every minute.
 focus_snapshot_s = "1"
 other_snapshot_s = "60"
-# 合约和市场精度快照每 5 分钟保存；Ondo WS 断档期间全市场 REST 后备扫描间隔。
+# Save contract and precision snapshots every 5 minutes; set the all-market REST fallback scan interval for Ondo WS gaps.
 contracts_interval_s = "300"
 rest_scan_interval_s = "60"
-# Lighter 元数据每小时刷新；不支持标的只警告一次，等待刷新后再判断。
+# Refresh Lighter metadata hourly; warn once for unsupported symbols and reassess after the next refresh.
 lighter_poll_s = "2"
 lighter_meta_refresh_s = "3600"
-# 整个连接或整个频道多久没有有效行情消息才记断档（秒），回测据此停挂。
+# Seconds without valid market data across a connection or channel before recording a gap; backtests suspend quoting during gaps.
 silence_timeout_s = "30"
-# 单个市场、频道多久没有更新时记 market_stale（秒），仅统计质量，不让回测停挂。
+# Seconds without updates for one market/channel before recording market_stale; tracks quality without suspending backtest quotes.
 market_stale_s = "600"
-# 连接保持但来源持续无有效行情达到此时长时，健康日志写中文警告（秒）。
+# Seconds without valid data from a connected source before writing a Chinese warning to the health log.
 source_silence_warn_s = "180"
-# Ondo 应用层心跳每 30 秒；币安在 23 小时主动重连。
+# Send Ondo application heartbeats every 30 seconds; proactively reconnect Binance after 23 hours.
 ondo_ping_s = "30"
 binance_reconnect_s = "82800"
-# 交易所可能迁移 WS 地址；连接成功却一直无行情时，先检查并更新此配置。
-# 币安地址以 streams= 结尾，采集器会追加已配置符号的 aggTrade 订阅。
+# Exchanges may migrate WS endpoints; check and update these settings if connections succeed but no data arrives.
+# The Binance URL ends in streams=; the collector appends aggTrade subscriptions for configured symbols.
 binance_ws_url = "wss://fstream.binance.com/market/stream?streams="
 ondo_ws_url = "wss://api.ondoperps.xyz/ws"
 
-# 相对路径以命令的当前工作目录为准，systemd 对应 WorkingDirectory。
+# Relative paths use the command's current working directory, or WorkingDirectory under systemd.
 data_dir = "data/collect"
 log_dir = "log"
-# 本采集目录累计压缩数据达到此 GB 上限后冲刷退出，退出码为 75；不删旧数据。
+# Flush and exit with code 75 when compressed data in the collection directory reaches this GB limit; keep existing data.
 max_disk_gb = "20"
-# 剩余空间不足此 GB 时同样冲刷退出（75）；目录累计量每 10 分钟全量校准。
+# Also flush and exit (75) when free space falls below this GB threshold; rescan total directory usage every 10 minutes.
 min_free_gb = "2"
-# 有界 HTTP 并发和写盘队列；HTTP 超时和请求间隔（毫秒）。
+# Bound HTTP concurrency and the write queue; configure the HTTP timeout and request interval (milliseconds).
 max_http_workers = 4
 write_queue_size = 1024
 http_timeout_s = "5"
 request_interval_ms = 250
 
-# Ondo 最多 100 档；竞争 band 与 tick 深度采用 scan_import 相同口径。
+# Ondo supports up to 100 levels; competition bands and tick depth use the same definitions as scan_import.
 depth = 100
 band_bps = "25"
 max_tick_depth = 10
 price_tick = "0.01"
 quantity_step = "0.1"
 
-# 同名不保证同一资产。默认币安符号为 {SYM}USDT，必须核实对应合约。
-# 按标的覆盖示例（取消注释后生效；不要照抄未经核实的映射）：
+# Matching names do not guarantee the same asset. Binance symbols default to {SYM}USDT; verify the corresponding contract.
+# Example symbol override (uncomment to enable; verify mappings before use):
 # [symbol_overrides.INTC]
 # price_tick = "0.01"
 # quantity_step = "0.1"

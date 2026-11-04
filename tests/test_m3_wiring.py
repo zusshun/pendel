@@ -1,4 +1,4 @@
-"""M3 安全回归：经真实组装器、签名队列与 HTTP 桩贯通验证。"""
+"""M3 safety regressions through the real builder, signing queue, and HTTP stubs."""
 
 import asyncio
 import io
@@ -198,7 +198,7 @@ class M3WiringTests(unittest.IsolatedAsyncioTestCase):
             return await send(message)
         self.ws.send = observe_send
         renewal = asyncio.create_task(self.bot.watchdog.check_once())
-        await asyncio.sleep(0)  # 续期检查已通过，实际 ping 尚未运行。
+        await asyncio.sleep(0)  # The renewal check has passed, but the actual ping has not run yet.
         reconnect = asyncio.create_task(self.bot.feed(True))
         connected = len(self.connections)
         await self.bot.stop_failed('已检测到三轮撤单失败')
@@ -240,7 +240,7 @@ class M3WiringTests(unittest.IsolatedAsyncioTestCase):
         watchdog = asyncio.create_task(self.bot.watchdog_loop())
         self.background.extend((feed, watchdog))
         await settle()
-        # 保持关键任务健康，只让登录 ACK 自己超时。
+        # Keep critical tasks healthy and let only the login ACK time out.
         for _ in range(16):
             for name in ('Strategy', 'OrderManager', 'Reconciler'):
                 self.bot.watchdog.beat(name)
@@ -430,7 +430,7 @@ class M3WiringTests(unittest.IsolatedAsyncioTestCase):
             return await http(method, url, **kwargs)
         self.bot.alerter._http = slow_http
         async def trigger_runtime_guard():
-            # 首份盘口未到只等待；明确模拟运行中的守卫停止失败。
+            # Wait while the first book is missing; explicitly simulate a running guard failing to stop.
             await self.bot.guard.trigger('模拟运行中盘口过期')
         self.bot.strategy_loop = trigger_runtime_guard
         running = asyncio.create_task(self.bot.run())

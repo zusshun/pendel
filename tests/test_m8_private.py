@@ -1,4 +1,4 @@
-"""M8 私有推送容错；字段契约待沙盒样本核实。"""
+"""M8 private update fault tolerance; field contracts await verification against sandbox samples."""
 
 import asyncio
 import unittest
@@ -64,7 +64,7 @@ class M8PrivateTests(unittest.IsolatedAsyncioTestCase):
     async def test_missing_private_order_fields_sync_and_alert(self):
         for key in self.order():
             if key == 'clientOrderId':
-                continue  # M24：可省略，本地按 orderId 回配，否则撤销遗留单。
+                continue  # M24: optional; match locally by orderId, or cancel orphaned orders.
             row = self.order()
             del row[key]
             with self.subTest(key=key):

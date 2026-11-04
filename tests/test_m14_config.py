@@ -1,4 +1,4 @@
-"""M14 的来源滞后与超慢锚配置必须可加载且保持安全边界。"""
+"""M14 source hysteresis and ultra-slow anchor configuration must load correctly and preserve safety boundaries."""
 
 import tempfile
 import tomllib

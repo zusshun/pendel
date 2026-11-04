@@ -1,4 +1,4 @@
-"""M17：公开心跳通过内存连接和可推进时钟验证，不联网。"""
+"""M17: test public heartbeats using in-memory connections and a controllable clock without network access."""
 
 import asyncio
 import json
@@ -13,7 +13,7 @@ from test_ondo_api import FakeClock, settle
 
 
 class PublicSocket:
-    """接收可以阻塞或断线，发送 ping 后可选择回送 pong。"""
+    """Receiving may block or disconnect; optionally return pong after a ping is sent."""
 
     def __init__(self, clock, *, auto_pong=True):
         self.clock, self.auto_pong = clock, auto_pong
@@ -185,7 +185,7 @@ class M17PublicHeartbeatTests(unittest.IsolatedAsyncioTestCase):
         bot, sockets = self.make_bot(auto_pong=False)
         await self.start_feed(bot)
         await self.advance(30)
-        # 超时与接收在同一轮调度中就绪，仍须核对 pong 的实际接收时间。
+        # When timeout and receive become ready in the same scheduling round, still check the actual pong receive time.
         self.clock.advance(10.1)
         sockets[0].incoming.put_nowait({'type': 'pong'})
         await settle()

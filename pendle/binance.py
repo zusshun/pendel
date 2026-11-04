@@ -1,4 +1,4 @@
-"""校验并导入币安 USDⓈ-M 公开逐笔成交日归档。"""
+"""Validate and import Binance USDⓈ-M daily public trade archives."""
 
 import csv
 import hashlib
@@ -23,7 +23,7 @@ CSV_COLUMNS = ('agg_trade_id', 'price', 'quantity', 'first_trade_id',
 
 
 class BinaryHttpClient(HttpClient):
-    """沿用公开 HTTP 客户端的超时，增加有上限的二进制 GET。"""
+    """Reuse public HTTP client timeouts and add size-limited binary GET requests."""
 
     def __init__(self, timeout_s=5, *, opener=urllib.request.urlopen, clock=time.time):
         super().__init__(timeout_s)
@@ -87,7 +87,7 @@ def _trade(row, symbol):
 
 
 def parse_agg_trades_zip(body, symbol):
-    """解析有表头或无表头的七列 aggTrades；整份有效后才返回。"""
+    """Parse seven-column aggTrades with or without a header; return only after validating the entire archive."""
     symbol = _symbol(symbol)
     if len(body) > MAX_FILE_BYTES:
         raise MarketError('币安归档超过单文件字节上限')
@@ -133,7 +133,7 @@ def _verify_checksum(body, checksum, filename):
 
 def fetch_binance_day(client, symbol, day, store, *, clock=time.time, sleep=time.sleep,
                       request_interval_ms=0, max_retries=3):
-    """下载并校验一个 UTC 日；失败保留抓取记录且不写入成交。"""
+    """Download and validate one UTC day; preserve fetch records on failure without writing trades."""
     symbol = _symbol(symbol)
     try:
         day = date.fromisoformat(day) if isinstance(day, str) else day

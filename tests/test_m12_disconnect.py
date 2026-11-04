@@ -1,4 +1,4 @@
-"""M12：断线撤单先于可能阻塞的紧急告警，全程使用内存替身。"""
+"""M12: disconnect cancellation precedes potentially blocking emergency alerts, using in-memory substitutes throughout."""
 
 import asyncio
 import logging
@@ -11,7 +11,7 @@ from test_maker_e2e import Alerts, Clock, Exchange, Files
 
 
 class BlockingUrgentAlerts(Alerts):
-    """紧急告警挂起，由测试检查挂起期间是否已经撤单。"""
+    """Block the emergency alert so the test can check whether orders were already cancelled while it is pending."""
 
     def __init__(self, events):
         super().__init__()

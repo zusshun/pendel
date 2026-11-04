@@ -1,4 +1,4 @@
-"""M4 普通告警后台发送的纯内存回归测试。"""
+"""M4 in-memory regression tests for sending ordinary alerts in the background."""
 
 import asyncio
 import logging

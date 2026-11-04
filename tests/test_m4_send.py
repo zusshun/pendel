@@ -1,4 +1,4 @@
-"""M4：固定排队订单必须通过发送时的完整报价约束。"""
+"""M4: fixed queued orders must pass all quote constraints at send time."""
 
 import asyncio
 import json
@@ -12,7 +12,7 @@ import test_m3_wiring as m3
 
 
 class M4SendRecheckTests(unittest.IsolatedAsyncioTestCase):
-    # 复用真实组装器和 HTTP 内存桩，不继承测试类以免重复收集 M3 测试。
+    # Reuse the real builder and in-memory HTTP stubs without inheriting the test class, avoiding duplicate M3 test discovery.
     asyncSetUp = m3.M3WiringTests.asyncSetUp
     asyncTearDown = m3.M3WiringTests.asyncTearDown
     wall = m3.M3WiringTests.wall
@@ -34,7 +34,7 @@ class M4SendRecheckTests(unittest.IsolatedAsyncioTestCase):
         self.position_at(quantity)
 
     async def queued(self, side, quantity, price, update, **flags):
-        """真实签名队列先等待令牌，再改变风险快照。"""
+        """Wait for a token in the real signing queue, then change the risk snapshot."""
         order = self.bot.manager.create_intent(MARKET, side, D(quantity), D(price), **flags)
         before = len(self.posts())
         self.bot.api._tokens = 0
@@ -58,7 +58,7 @@ class M4SendRecheckTests(unittest.IsolatedAsyncioTestCase):
         order, sent = await self.queued('buy', '2.5', '99.88',
                                         lambda: self.position_at('3.1'))
         self.rejected(order, sent)
-        # 取消旧意图后，下一节拍可重新生成软侧数量和 band 边缘价格。
+        # After cancelling the old intent, the next tick can regenerate the soft-side quantity and band-edge price.
         decision = self.bot.engine.evaluate(self.bot.book, self.bot.state, self.bot.rules,
                                             now=self.clock.monotonic())
         self.assertTrue(decision.eligible, decision.reason)

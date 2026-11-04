@@ -1,4 +1,4 @@
-"""M14 健康日志与摘要持续记录中心来源、超慢锚偏差及无偏移模式。"""
+"""M14 health logs and summaries track the center source, ultra-slow anchor deviation, and zero-offset mode."""
 
 import unittest
 from datetime import datetime

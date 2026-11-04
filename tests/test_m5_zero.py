@@ -1,4 +1,4 @@
-"""M5 核零只受本市场订单及持仓更新影响；全部传输均为内存桩。"""
+"""M5 verification of zero open orders responds only to orders and positions in the current market; all transports are in-memory stubs."""
 
 import unittest
 

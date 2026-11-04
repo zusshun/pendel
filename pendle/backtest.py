@@ -1,4 +1,4 @@
-"""只读、无前视的成交驱动回放；执行与奖励的所有金额保留 Decimal。"""
+"""Read-only, trade-driven replay without lookahead; retain Decimal for all execution and reward amounts."""
 
 from bisect import bisect_left, bisect_right, insort
 from collections import deque
@@ -28,13 +28,13 @@ def _binance_ns(row):
 
 
 def _visible_ns(row, event_ns, latency_ns):
-    """实采行情同时受固定延迟和实际接收时间约束；旧档沿用固定延迟。"""
+    """Live captures respect both fixed latency and receipt time; legacy archives use fixed latency."""
     received = row.get('received_ms')
     return max(event_ns + latency_ns, received * NS_MS) if received is not None else event_ns + latency_ns
 
 
 def gap_duration_ms(gaps, start_ms, end_ms):
-    """裁剪至回测窗口并合并重叠区间，避免多来源断档重复计时。"""
+    """Clip to the backtest window and merge overlaps to avoid counting gaps from multiple sources twice."""
     intervals = sorted((max(start_ms, row['start_ms']),
                         min(end_ms, end_ms if row.get('end_ms') is None else row['end_ms']))
                        for row in gaps)
@@ -47,7 +47,7 @@ def gap_duration_ms(gaps, start_ms, end_ms):
 
 
 def _relevant_gap(row, identity, hedge_mode):
-    """仅依赖当前市场的行情频道；兼容早期缺来源或频道的断档输入。"""
+    """Use only market-data channels for this market; support legacy gaps without a source or channel."""
     if not row.get('source') or not row.get('channel'):
         markets = {identity.ondo_market, identity.binance_symbol}
         if hedge_mode == 'lighter_proxy':
@@ -65,7 +65,7 @@ def _relevant_gap(row, identity, hedge_mode):
 
 def validate_mapping(ondo_trades, binance_trades, *, start_ms, end_ms,
                      max_mapping_dev_bps=500):
-    """按每笔 Ondo 成交当时的币安末价检验同名资产，禁止借用未来价格。"""
+    """Validate asset mapping against the latest Binance price at each Ondo trade, without future prices."""
     prices = sorted((r for r in binance_trades if r['transact_time'] < end_ms),
                     key=lambda r: (r['transact_time'], r.get('agg_id', 0)))
     trades = sorted((r for r in ondo_trades
@@ -88,7 +88,7 @@ def validate_mapping(ondo_trades, binance_trades, *, start_ms, end_ms,
 
 
 class _Replay:
-    """增量队列驱动；基差保留最近 N 个样本，守卫维护极值窗口。"""
+    """Drive replay with an incremental queue; retain the latest N basis samples and guard extrema windows."""
 
     def __init__(self, ondo, binance, settings, symbol, start_ms, end_ms, depths, gaps,
                  liquidation_depths=()):
@@ -111,7 +111,7 @@ class _Replay:
         self.reference_agg_id = -1
         self.best_bid, self.best_ask, self.depth_mid = None, None, None
         self.best_bid_time = self.best_ask_time = self.depth_mid_time = None
-        # 强平成本是事后校准假设；盘口观测不进入历史报价、套利判断或奖励中间价。
+        # Liquidation costs are calibrated after the fact; order book observations do not affect historical quotes, arbitrage checks, or reward midpoints.
         spreads = [_d(row['spread_bps']) for row in liquidation_depths
                    if row.get('spread_bps') is not None]
         spreads = [value for value in spreads if value.is_finite() and ZERO <= value < 2 * BPS]
@@ -168,11 +168,11 @@ class _Replay:
                 now - self.reference_time <= int(self.s.max_ref_age_s * NS_S))
 
     def add_sample(self, now, stamp, side, value, queues, values, max_age_s, expiry_kind):
-        """每侧独立限量，年龄按原始事件时间计算，不让可见延迟延长有效期。"""
+        """Limit each side independently and age samples by event time so visibility latency cannot extend validity."""
         if now - stamp > int(max_age_s * NS_S):
             return
         queue, sorted_values = queues[side], values[side]
-        # 实采接收顺序可能与交易所时间不同，年龄和最近 N 笔均按交易所时间维护。
+        # Capture arrival order may differ from exchange time; use exchange time for age and the latest N samples.
         index = bisect_right([item[0] for item in queue], stamp)
         queue.insert(index, (stamp, value))
         insort(sorted_values, value)
@@ -182,7 +182,7 @@ class _Replay:
         self.push(stamp + int(max_age_s * NS_S) + 1, 4, expiry_kind)
 
     def side_median(self, now, side, queues, values, max_age_s):
-        """逐样本过期，不能用该侧最新时间替旧样本续期。"""
+        """Expire samples individually; the latest timestamp on a side must not renew older samples."""
         queue, sorted_values = queues[side], values[side]
         cutoff = now - int(max_age_s * NS_S)
         while queue and queue[0][0] < cutoff:
@@ -211,7 +211,7 @@ class _Replay:
         return self.center_state(now)[0]
 
     def update_online(self, now):
-        """互斥归因；至少一侧有效活单算在线，奖励双边资格单独判断。"""
+        """Assign mutually exclusive causes; one valid live side counts as online, with two-sided reward eligibility checked separately."""
         center, source = self.center_state(now)
         self.using_fallback = source == 'ondo_mid'
         if self.in_gap(now):
@@ -236,7 +236,7 @@ class _Replay:
         self.online = reason in ('online', 'fallback_online')
 
     def record_center(self, now):
-        """保留可见时刻的中心价轨迹；失效也保留为空，禁止事后补值。"""
+        """Record the center price as it becomes visible, retaining invalid values as null without backfilling."""
         if now < self.start:
             return
         center, source = self.center_state(now)
@@ -314,7 +314,7 @@ class _Replay:
             price = (center * (ONE - sign * self.s.quote_offset_bps / BPS) / tick).to_integral_value(rounding=rounding) * tick
             if price <= 0:
                 continue
-            # 当前持仓和该侧所有潜在挂单均计入上限，待生效单与待撤单也不例外。
+            # The limit includes current inventory and all potential orders on this side, including pending activation or cancellation.
             potential = sum((o['quantity'] * o['price'] for o in self.orders.values() if o['side'] == side), ZERO)
             capacity = (self.s.max_inventory_usd - sign * self.ondo_position * center - potential) / price
             quantity = min(self.s.quote_notional / price, max(ZERO, capacity))
@@ -332,7 +332,7 @@ class _Replay:
             order = {'id': self.order_sequence, 'side': side, 'price': price,
                      'quantity': quantity, 'active': False, 'cancel_time': None}
             self.orders[order['id']] = order
-            # 同纳秒先匹配已有活单，再让待挂单生效。
+            # Within the same nanosecond, match existing live orders before activating pending orders.
             self.push(now + self.s.place_latency_ms * NS_MS, 3, 'activate', order['id'])
             self.log(now, 'order_sent', order_id=order['id'], side=side, price=price,
                      quantity=quantity, potential_notional=max(ZERO, sign * self.ondo_position * center + potential + quantity * price))
@@ -374,7 +374,7 @@ class _Replay:
         self.update_maxima()
 
     def fill(self, now, order, quantity, fill_type, trade_id):
-        """历史成交和套利吃单共用库存、费用及可见回报路径。"""
+        """Historical fills and arbitrage pickoffs share inventory, fees, and visible execution reports."""
         order['quantity'] -= quantity
         signed = quantity if order['side'] == 'buy' else -quantity
         notional = quantity * order['price']
@@ -406,7 +406,7 @@ class _Replay:
         self.push(now + self.s.data_latency_ms * NS_MS, -1, 'fill_visible', notice)
 
     def pickoff(self, now):
-        """仅在币安价格可见时，以当时基差判断活单是否足以覆盖套利费。"""
+        """When a Binance price is visible, use the current basis to check whether live orders cover arbitrage fees."""
         center = self.current_center(now)
         if (not self.s.pickoff_enabled or now < self.start or center is None or
                 not self.reference_fresh(now) or self.in_gap(now)):
@@ -422,7 +422,7 @@ class _Replay:
                 self.fill(now, order, order['quantity'], 'pickoff', None)
 
     def refresh_marks(self, now):
-        """将已对冲的共同持仓在两平台价差变动中的盈亏单列。"""
+        """Track PnL from cross-venue spread changes on matched hedged positions separately."""
         center = self.current_center(now) or self.center or self.reference
         proxy = self.proxy()
         if center is not None and proxy is not None:
@@ -445,7 +445,7 @@ class _Replay:
         quantity = item['quantity']
         if not quantity:
             return
-        # 断档、过期参考价下不能假设代理对冲成功，保留风险并在期末取消。
+        # Do not assume proxy hedges succeed during gaps or with stale references; retain exposure and cancel at period end.
         if self.in_gap(now) or self.reference is None or now - self.reference_time > int(self.s.max_ref_age_s * NS_S):
             self.pnl_determinate = False
             self.log(now, 'hedge_unresolved', quantity=quantity)
@@ -478,7 +478,7 @@ class _Replay:
         self.guard_max.append((now, price))
         move = (self.guard_max[0][1] / self.guard_min[0][1] - ONE) * BPS
         if move > self.s.guard_move_bps:
-            # 一段暂停内延长冷却不改变代次，保留本段最早撤单时刻。
+            # Extending cooldown within a pause preserves its generation and earliest cancellation time.
             if not self.guard_active:
                 self.guard_generation += 1
             self.guard_active = True
@@ -560,7 +560,7 @@ class _Replay:
                     self.guard_max.clear()
                 self.reference, self.reference_time = _d(data['price']), stamp
                 self.reference_agg_id = agg_id
-                # 参考价改变产生的区间漂移归于此前持仓，再让套利吃单改变仓位。
+                # Attribute drift from reference price changes to prior holdings before arbitrage pickoffs change positions.
                 self.refresh_marks(now)
                 self.pickoff(now)
                 self.push(now, 4, 'guard', data)
@@ -722,7 +722,7 @@ class _Replay:
 
 def run_backtest(ondo_trades, binance_trades, settings, *, symbol, start_ms, end_ms,
                  depth_observations=(), gaps=()):
-    """回放半开窗口；窗口前成交仅预热，窗口后成交不进入决策，盘口价差可校准强平成本。"""
+    """Replay a half-open window; earlier trades only warm up state, later trades cannot affect decisions, and order book spreads may calibrate liquidation costs."""
     if type(start_ms) is not int or type(end_ms) is not int or start_ms < 0 or end_ms <= start_ms:
         raise ValueError('回测时间窗口无效')
     ondo = sorted((dict(r) for r in ondo_trades if _ondo_ns(r) < end_ms * NS_MS),

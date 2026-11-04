@@ -1,4 +1,4 @@
-"""实盘策略使用纯盘口与内存依赖验证，不联网。"""
+"""Test the live strategy using order book data and in-memory dependencies without network access."""
 
 import unittest
 from dataclasses import replace
@@ -89,7 +89,7 @@ class QuoteTests(unittest.TestCase):
         self.state.orders = {side: Order(side, MARKET, side, D(4), D(price),
             status=OrderStatus.OPEN, exchange_ms=100000)
             for side, price in [('buy','99.9'), ('sell','100.1')]}
-        # 前轮曾选择中间价；达到最短停留时间后才能切到 mark。
+        # The previous round selected the midpoint; switch to the mark only after the minimum dwell time.
         self.engine.mark = (D(100), 130)
         self.engine.price_discovery_seen = 130
         result = self.quote(own_book, now=130)

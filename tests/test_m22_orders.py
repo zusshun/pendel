@@ -1,4 +1,4 @@
-"""M22：离线验证官方订单数量字段与拒单诊断。"""
+"""M22: verify official order quantity fields and rejection diagnostics offline."""
 
 import json
 import logging
@@ -12,7 +12,7 @@ from test_maker import MARKET
 
 
 def documented_order(cid, *, size='0.07', filled='0', status='OPEN', at=10):
-    """数量采用文档字段，累计成交与末笔成交、成交金额相互独立。"""
+    """Use the documented quantity fields; cumulative fills, last fill quantity, and fill notional are independent."""
     return {'orderId': 'exchange-' + cid, 'clientOrderId': cid, 'market': MARKET,
             'side': 'buy', 'type': 'limit', 'price': '250.63', 'size': size,
             'filledSize': filled, 'lastFillSize': '0.01' if D(filled) else '0',

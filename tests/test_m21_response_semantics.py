@@ -1,4 +1,4 @@
-"""M21：成功空结果按接口语义处理，格式异常保留真实 HTTP 状态。"""
+"""M21: handle successful empty results according to endpoint semantics and preserve actual HTTP status for malformed responses."""
 
 import unittest
 

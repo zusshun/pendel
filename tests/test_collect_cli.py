@@ -1,4 +1,4 @@
-"""常驻采集 CLI 的离线分发与配置行为。"""
+"""Offline dispatch and configuration behavior of the persistent collector CLI."""
 
 import contextlib
 import io

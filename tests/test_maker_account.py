@@ -1,4 +1,4 @@
-"""首版单市场账户不得忽略其他市场的名义持仓。"""
+"""The initial single-market account implementation must account for position notionals in other markets."""
 
 import unittest
 from dataclasses import replace

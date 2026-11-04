@@ -1,4 +1,4 @@
-"""M14 标记价格与价格发现状态的接收、源时间校验；全部离线。"""
+"""M14 offline tests for receiving mark prices and price discovery status and validating source timestamps."""
 
 import asyncio
 import json
@@ -64,7 +64,7 @@ class MarkSourceFreshnessTests(unittest.IsolatedAsyncioTestCase):
         for field in ('lastUpdatedTime', 'timestamp'):
             for age, fresh in ((3600, True), (3600.001, False), (-2, True), (-2.001, False)):
                 with self.subTest(field=field, age=age):
-                    # 各边界独立，避免前一子例接受的未来源时间影响后续排序。
+                    # Keep boundaries independent so a future source timestamp accepted in one subtest does not affect later ordering.
                     self.setUp()
                     message = self.message()
                     target = message['data'][0] if field == 'lastUpdatedTime' else message

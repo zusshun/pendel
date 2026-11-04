@@ -1,4 +1,4 @@
-"""监督循环通过内存交易所与内存 WS 验证，不连接网络或端口。"""
+"""Test the supervisor loop with an in-memory exchange and WS connections without network or port access."""
 
 import asyncio
 import json
@@ -68,7 +68,7 @@ class MakerSupervisorTests(unittest.IsolatedAsyncioTestCase):
         await self.bot.shutdown()
 
     async def start_feeds(self):
-        # 消息顺序测试不推进定时器，避免后台心跳自行快进共享时钟。
+        # Do not advance timers in message-order tests; background heartbeats must not fast-forward the shared clock.
         self.bot.sleep = FakeClock().sleep
         self.feeds.append(asyncio.create_task(self.bot.feed()))
         await settle()
@@ -84,7 +84,7 @@ class MakerSupervisorTests(unittest.IsolatedAsyncioTestCase):
             'asks': [[str(center+D('.1')), '10'], [str(center+1), '10']]}]}
 
     async def publish_snapshot(self, market=MARKET, price='100'):
-        """有效行情同时推送盘口和实际标记价格频道。"""
+        """Publish valid market data to both the order book and actual mark price channels."""
         await self.public_ws.incoming.put(self.snapshot(market, price))
         source_time = datetime.fromtimestamp(self.clock.wall(), ZoneInfo('UTC')).isoformat()
         await self.public_ws.incoming.put({'channel': self.settings.mark_channel,

@@ -1,4 +1,4 @@
-"""单市场实盘策略；所有发送复用订单管理器和全局闸门。"""
+"""Live strategy for a single market; all sends use the order manager and global gate."""
 
 import asyncio
 import json
@@ -104,7 +104,7 @@ def risk_orders(state, exclude=None):
 
 
 def base_position_capacity(rules, state, market, side, exclude=None):
-    """交易所基础量上限独立于美元上限；全部同侧非终态剩余量都占用容量。"""
+    """The exchange base-size cap is separate from USD caps; all same-side nonterminal remaining quantities consume capacity."""
     if rules.max_position_base_size is None:
         return None
     direction = 1 if side == 'buy' else -1
@@ -120,9 +120,9 @@ class QuoteEngine:
         self.anchor = self.anchor_at = self.ema = None
         self.ema_at = self.prior_ema = None
         self.mark = self.external = self.basis = None
-        # None 仅用于未经过公开入站的内存状态；真实行情必须给出有效源时间。
+        # None is reserved for in-memory state that bypasses public ingestion; live data must provide valid source times.
         self.mark_source_times = self.discovery_source_times = None
-        # 时间异常可使有效性失效，但不能清除已接受值的排序依据。
+        # Invalid times may invalidate freshness but must not erase the ordering baseline for accepted values.
         self.mark_accepted_source_time = None
         self.mark_ws_seen = self.mark_rest_seen = None
         self.public_health = None
@@ -149,7 +149,7 @@ class QuoteEngine:
             -2 <= wall-stamp <= self.settings.mark_source_max_age_s for stamp in times))
 
     def ws_mark_seen(self):
-        # 纯内存调用仍可直接注入 mark；REST 接收时间绝不能伪装成 WS 推送。
+        # In-memory callers may inject marks directly; REST receipt times must never count as WS updates.
         if self.mark_ws_seen is None and self.mark_rest_seen is None and self.mark is not None:
             return self.mark[1]
         return self.mark_ws_seen
@@ -188,7 +188,7 @@ class QuoteEngine:
         return tuple(tuple((p, q) for p, q in levels.items() if q > 0) for levels in sides)
 
     def observe_center(self, book, state, *, now):
-        """观测有效行情的实际中心；报价暂停和价格发现均不冻结短周期与超慢锚。"""
+        """Observe the center price from valid data; quote pauses and price discovery never freeze the short EMA or ultra-slow anchor."""
         cfg = self.settings
         if self.subscription_failures:
             return Decision(False, '关键公开频道订阅失败，双侧停止报价')
@@ -219,13 +219,13 @@ class QuoteEngine:
         if source == 'third_party_mid' and mid is None:
             return Decision(False, '中心价来源最短停留等待', center_source=source)
         center = mid if source == 'third_party_mid' else self.mark[0]
-        # 超慢锚按实际经过时间更新；即使本轮守卫拒绝，也不能冻结真实中心。
+        # Update the ultra-slow anchor by elapsed time; guard rejection must not freeze the actual center price.
         if self.slow_anchor is None:
             self.slow_anchor = center
             self.slow_prior_anchor = center
             self.slow_drift_bps = D(0)
         else:
-            # 同一时刻的复核始终使用更新前的锚，不能因先观测一次而放宽守卫。
+            # Rechecks at the same instant use the prior anchor so an earlier observation cannot relax the guard.
             if now != self.slow_anchor_at:
                 self.slow_prior_anchor = self.slow_anchor
             self.slow_drift_bps = abs(center/self.slow_prior_anchor-1)*BPS
@@ -233,11 +233,11 @@ class QuoteEngine:
             alpha = D(str(-math.expm1(-elapsed/cfg.slow_anchor_tau_s)))
             self.slow_anchor += alpha*(center-self.slow_anchor)
         self.slow_anchor_at = now
-        # 短周期 EMA 也按真实时间追踪实际中心，守卫拒绝不能冻结观测。
+        # The short EMA also tracks the actual center price in real time; guard rejection must not freeze observations.
         if self.ema is None:
             self.ema = self.prior_ema = center
         else:
-            # 同刻复核沿用更新前的 EMA，避免一次观测就放宽漂移守卫。
+            # Rechecks at the same instant use the prior EMA so one observation cannot relax the drift guard.
             if now != self.ema_at:
                 self.prior_ema = self.ema
             elapsed = max(0, now-self.ema_at)
@@ -246,7 +246,7 @@ class QuoteEngine:
         self.ema_at = now
         while self.history and now-self.history[0][0] > cfg.jump_window_s:
             self.history.popleft()
-        # 先保留本轮追加前的历史；被拒绝的中心同样进入后续跳变窗口。
+        # Save history before appending this observation; rejected center prices still enter later jump windows.
         self.prior_history = tuple(self.history)
         if not self.history or self.history[-1] != (now, center):
             self.history.append((now, center))
@@ -265,7 +265,7 @@ class QuoteEngine:
         if self.in_price_discovery:
             return Decision(False, '市场处于价格发现，双侧停止报价', center, **center_values)
         fresh_mark = True
-        # 连续 mark 阶段只防灾难性累计漂移，停报不重置；自我引用的主要防线是 M14 的对称报价。
+        # Continuous mark phases only guard against catastrophic cumulative drift; pauses do not reset them. M14 symmetric quotes are the main defense against self-reference.
         cumulative = (abs(center/self.mark_reference-1)*BPS
                       if source == 'mark' else D(0))
         if (self.slow_drift_bps > cfg.max_slow_drift_bps
@@ -275,7 +275,7 @@ class QuoteEngine:
             return Decision(False, '第三方价差超过阈值', center, **center_values)
         if source == 'third_party_mid' and abs(center/self.mark[0]-1)*BPS > cfg.max_mid_mark_bps:
             return Decision(False, '中间价与标记价格偏离超过阈值', center, **center_values)
-        # 两种来源均使用本轮观测更新前的短周期 EMA 与历史判定守卫。
+        # Both sources apply guards using the short EMA and history from before this observation.
         if abs(center/self.prior_ema-1)*BPS > cfg.max_anchor_drift_bps:
             return Decision(False, '偏离独立慢锚', center, **center_values)
         if any(abs(center/old-1)*BPS > cfg.jump_bps for _, old in self.prior_history):
@@ -306,12 +306,12 @@ class QuoteEngine:
             return Decision(False, '竞争量超过判据', center, **competition_values)
         if source == 'third_party_mid':
             self.mark_reference = None
-        # 固定订单只校验真实价格和剩量；假想理论双边不能成为保留/发送约束。
+        # Validate fixed orders by actual price and remaining quantity; hypothetical two-sided quotes must not constrain retention or sending.
         if market_only:
             return Decision(True, '判据通过', center, **competition_values)
         position = state.positions[cfg.market]
         pos_usd = position*center
-        # mark 可能完全跟随我方盘口中点；两侧距离保持对称，库存仅影响数量。
+        # The mark may fully track our own order book midpoint; keep offsets symmetric and adjust only quantity for inventory.
         skew = (D(0) if source == 'mark' else
                 max(D(-1), min(D(1), pos_usd/cfg.soft_cap_usd))*cfg.skew_bps)
         quotes = []
@@ -327,13 +327,13 @@ class QuoteEngine:
             if soft_edge:
                 offset = cfg.band_bps-cfg.band_margin_bps
             price = center*(1 + (-offset if side == 'buy' else offset)/BPS)
-            # 软上限加仓单贴近 band 外缘，必须向内取整，再复核最小偏移与 post-only。
+            # Orders adding exposure at the soft cap sit near the band edge; round inward, then recheck minimum offset and post-only.
             rounding = (ROUND_CEILING if side == 'buy' else ROUND_FLOOR) if soft_edge else (
                 ROUND_FLOOR if side == 'buy' else ROUND_CEILING)
             price = (price/rules.tick).to_integral_value(rounding=rounding)*rules.tick
             amount = cfg.quote_notional*(D('.5') if adding and soft else 1)
             quantity = (amount/price/rules.increment).to_integral_value(rounding=ROUND_FLOOR)*rules.increment
-            # 固定单复核和既有双边检查不预留一张不存在的同侧新单；实际发送仍检查全部活单。
+            # Fixed-order and existing two-sided checks reserve no hypothetical same-side order; actual sends still check all active orders.
             if not guard_only:
                 quantity = risk.limit_adding_quantity(cfg.market, side, quantity, rules.increment,
                     [MarketRisk(cfg.market, position, max(center, self.mark[0]) if fresh_mark else center)],
@@ -341,10 +341,10 @@ class QuoteEngine:
             if not adding and soft:
                 quantity = min(quantity, (abs(position)/rules.increment).to_integral_value(
                     rounding=ROUND_FLOOR)*rules.increment)
-            # 保留合规旧单时检查其当前价格；理论报价仍用于重报阈值，发送前默认校验新价。
+            # Check the current price when retaining valid orders; theoretical quotes still set requote thresholds, and sends validate new prices by default.
             old = existing.get(side)
             capacity = base_position_capacity(rules, state, cfg.market, side, exclude=old)
-            # guard_only 的固定单已在发送入口独立核验，不能再预留一张同侧假想新单。
+            # Fixed orders in guard_only are checked separately at send time; do not reserve another hypothetical same-side order.
             if capacity is not None and (not guard_only or existing_prices):
                 quantity = min(quantity, (capacity/rules.increment).to_integral_value(
                     rounding=ROUND_FLOOR)*rules.increment)
@@ -370,7 +370,7 @@ class QuoteEngine:
 
 
 class Maker:
-    """安全编排器；同步 tick 与实际发送回调共同执行风险检查。"""
+    """Safety orchestrator; synchronous ticks and actual send callbacks both enforce risk checks."""
 
     def __init__(self, settings, *, api, alerter, rules=None, files=None,
                  monotonic=time.monotonic, clock=time.time, sleep=asyncio.sleep,
@@ -440,7 +440,7 @@ class Maker:
         self.guard = Guard(settings.cooldown_s, settings.stable_s,
             stop=self.stop_orders, block=lambda: self.state.begin_sync(settings.market,'守卫屏障'),
             resume=self.manager.prepare_resume, monotonic=monotonic)
-        # dry-run 不启动写单循环；无密钥时也不启动私有行情及对账循环。
+        # Dry-run starts no order-writing loop; without credentials, it also skips private feeds and reconciliation.
         required_tasks = {'Strategy'}
         if settings.mode != 'dry-run':
             required_tasks.add('OrderManager')
@@ -451,7 +451,7 @@ class Maker:
             monotonic=monotonic, sleep=sleep, required_tasks=required_tasks)
 
     async def alert(self, reason):
-        # 下单协程不能等待包含自身的停止任务；其通知留到撤单后再交给后台队列。
+        # An order coroutine must not await a stop task that includes itself; queue its alerts after cancellation.
         current = asyncio.current_task()
         if current in self.manager.pending.values():
             self._order_alerts.append(reason)
@@ -468,19 +468,19 @@ class Maker:
         return await self.alerter.alert(reason, urgent=True)
 
     async def record_order_rejection(self, reason):
-        """所有下单路径的拒单均进入正式日志及健康停报原因统计。"""
+        """Log rejections from every order path and include them in health statistics for quote-stop reasons."""
         self.log({'事件': '下单被拒绝', '原因': reason}, level=logging.WARNING)
         self.record_quote_state(False, reason, event=True)
 
     async def stop_failed(self, reason):
-        """停止任务已结束后熔断，避免停止与熔断互相等待。"""
+        """Halt after the stop task finishes so stopping and halting cannot wait on each other."""
         if self._stop_failed:
             return
         self._stop_failed = True
         previous_halt_finished = self.halt._task is not None and self.halt._task.done()
         if self.halt._task is None:
             await self.trip_halt('STOP_FAILED：'+reason, permanent=True)
-        # 已有熔断任务时，锁已经尝试持久化；由该任务发送合并后的紧急告警。
+        # An existing halt task has already attempted lock persistence; it sends the merged urgent alert.
         self.gate.finish_stop()
         self.exit_code = 76
         if previous_halt_finished:
@@ -523,7 +523,7 @@ class Maker:
             self.started = True
             if cfg.mode == 'live' and not cfg.healthcheck_url and cfg.healthcheck_waived:
                 await self.urgent_alert(HEALTHCHECK_WAIVER_WARNING)
-            # 首次检查留出任务启动宽限；重连不能刷新这些健康水位。
+            # Allow task startup grace before the first check; reconnects must not refresh these health timestamps.
             for name in self.watchdog.thresholds:
                 self.watchdog.last_seen[name] = self.monotonic()
             self.ack_wait_started = self.monotonic()
@@ -532,7 +532,7 @@ class Maker:
             raise
 
     def ledger_for_window(self, window_id):
-        """账本以账户和窗口隔离；迟到成交不得切换当前风险账本。"""
+        """Isolate ledgers by account and window; late fills must not switch the active risk ledger."""
         if window_id not in self.ledgers:
             path = Path(self.settings.data_dir)/(
                 'pnl-'+self.settings.account+'-'+window_id[:10]+'.json')
@@ -543,7 +543,7 @@ class Maker:
         return self.validate_resting_or_pending(order, state, now=self.monotonic())
 
     def validate_resting_or_pending(self, order, state, *, now):
-        """发送前与旧单保留共用完整复核，候选单只按剩余量计入一次。"""
+        """Share full validation between sending and retaining orders; count the candidate only once at its remaining quantity."""
         cfg, remaining = self.settings, order.remaining
         if self.stop_event.is_set():
             raise OrdersBlocked('进程正在退出，禁止新增')
@@ -575,7 +575,7 @@ class Maker:
             if window.reducing and not order.reduce_only:
                 raise OrdersBlocked('窗口最后一小时禁止发送非 reduceOnly 挂单')
             snapshot=copy(state)
-            # 已公开旧单仍参与盘口扣除；未公开意图只从盘口快照排除。
+            # Published orders still count in order book subtraction; exclude unpublished intents only from the order book snapshot.
             snapshot.orders={cid:existing for cid,existing in state.orders.items()
                 if existing is not order or order.status in (
                     OrderStatus.OPEN,OrderStatus.PARTIAL,OrderStatus.ACKED)}
@@ -588,7 +588,7 @@ class Maker:
             center=decision.center
             bids,asks=self.engine.third_party(self.book,snapshot)
             opposite=asks if order.side=='buy' else bids
-            # 理论价只用于普通重报阈值，不作为固定订单的合规内沿。
+            # Theoretical prices set ordinary requote thresholds, not the inner compliance boundary for fixed orders.
             direction = -1 if order.side == 'buy' else 1
             distance=direction*(order.price/center-1)*BPS
             if (not order.post_only or not cfg.min_offset_bps<=distance<=cfg.band_bps-cfg.band_margin_bps
@@ -599,7 +599,7 @@ class Maker:
             adding=position==0 or (position>0)==(order.side=='buy')
             soft=abs(position*center)>=cfg.soft_cap_usd
             amount=cfg.quote_notional*(D('.5') if adding and soft else 1)
-            # 固定价格可能仍在合规区间内，但其数量必须按该价格及最新活单重新限量。
+            # A fixed price may remain valid, but quantity must be limited again using that price and current active orders.
             quantity=(amount/order.price/self.rules.increment).to_integral_value(
                 rounding=ROUND_FLOOR)*self.rules.increment
             quantity=self.risk.limit_adding_quantity(cfg.market,order.side,quantity,self.rules.increment,
@@ -618,7 +618,7 @@ class Maker:
         balance = state.balances
         if not balance or balance.get('under_liquidation') is not False:
             raise RiskRejected('余额不完整或账户正在清算')
-        # 持仓按参考价格估值；每张活单及新单的较高限价由 RiskManager 各自计入。
+        # Value positions at the reference price; RiskManager separately accounts for each active or new order at its higher limit price.
         price = max(center, self.engine.mark[0] if self.engine.mark else D(0))
         rows = [MarketRisk(cfg.market, state.positions[cfg.market], price,
                            initial_margin_rate=self.initial_margin_rate,unrealized_pnl=self.unrealized())]
@@ -676,7 +676,7 @@ class Maker:
             query_window_id = self.ledger.window_id if self.ledger else None
             start_ms = int(datetime.fromisoformat(query_window_id).timestamp()*1000) if query_window_id else 0
             previous_sync = self.perwindow_fill_sync_ms.get(query_window_id, start_ms)
-            # WS 的最新成交不代表 REST 已完整补账；新窗口首次查询必须从窗口起点开始。
+            # The latest WS fill does not prove REST reconciliation is complete; the first query for a new window must start at its beginning.
             fills = await self.api.get_fills(cfg.market, start_time=max(start_ms,previous_sync-10000))
             for fill in fills:
                 await self.record_fill(fill)
@@ -729,7 +729,7 @@ class Maker:
 
     async def _tick(self):
         cfg, now = self.settings, self.monotonic()
-        # 先结算上一段来源；本轮行情缺失等早退不得沿用旧中心。
+        # Settle the previous source interval first; early returns such as missing data must not reuse the old center price.
         self.accrue_quote_time()
         self.observed_center_source = None
         self.market_data_wait_reason = None
@@ -739,7 +739,7 @@ class Maker:
         window = window_state(cfg,datetime.fromtimestamp(self.clock(),ZoneInfo(cfg.timezone)))
 
         def observe_paused_center():
-            # 只更新内存中的有效中心，风险停报不能冻结短周期与超慢锚或触发发送。
+            # Update only the valid in-memory center price; risk pauses must not freeze the short EMA or ultra-slow anchor, or trigger sends.
             if (self.book is not None and self.book_seen is not None
                     and 0 <= now-self.book_seen <= cfg.max_book_age_s):
                 observed = self.engine.observe_center(self.book, self.state, now=now)
@@ -799,7 +799,7 @@ class Maker:
                 and not self.engine.discovery_is_fresh(now)):
             await self.guard.trigger('缺少新鲜价格发现状态确认，双侧停止报价')
             return
-        # 首份数据未到齐时只等待；已有活单仍须交给完整守卫复核并撤销。
+        # Wait if initial data is incomplete; existing active orders still require full guard checks and cancellation.
         if not active_orders:
             if self.engine.mark is None:
                 self.market_data_wait_reason = '等待首个标记价格'
@@ -822,13 +822,13 @@ class Maker:
             self.waiting, self.qualified = True, False
             if decision.reason in ('竞争量超过判据','第三方盘口覆盖不完整') and now>=self.gate_wait_until:
                 self.gate_wait_until=now+cfg.gate_interval_s
-            # 判据要求双侧停止时先全撤；UNKNOWN 的消歧由停止流程继续完成。
+            # Cancel all first when eligibility requires both sides to stop; the stop flow continues resolving UNKNOWN orders.
             await self.guard.trigger(decision.reason)
             if self.last_gate_status is not False:
                 await self.alerter.alert('报价判据不通过：'+decision.reason,key='判据变化')
                 self.last_gate_status=False
             return
-        # 同步、ACK、判据等待、退避及普通重报节流均不能推迟撤销不合规旧单。
+        # Syncing, ACK waits, eligibility waits, backoff, and requote throttling must not delay cancellation of invalid orders.
         try:
             for order in self.state.active_orders(cfg.market):
                 self.validate_resting_or_pending(order,self.state,now=now)
@@ -897,7 +897,7 @@ class Maker:
         if active:
             if self.last_requote is not None and now-self.last_requote < cfg.min_requote_interval_s:
                 return
-            # 每轮普通重报只发一次市场全撤；本节拍恢复对账，下一节拍按最新状态定价。
+            # Send one market-wide cancellation per ordinary requote cycle; reconcile this tick and price from the latest state on the next.
             if await self.stop_orders('合规挂单偏离理论价超过重报阈值，按市场撤销双边'):
                 self.last_requote = self.monotonic()
                 if self.state.deadman_acked and self.gate.is_open and not self.gate.trading_halted:
@@ -982,7 +982,7 @@ class Maker:
         return False
 
     def reduction_center(self, exclude=None):
-        """减仓滑点每轮使用新鲜第三方中点；只有缺边才退到未过期慢锚。"""
+        """Use a fresh third-party midpoint each cycle for reduction slippage; fall back to an unexpired slow anchor only when a side is missing."""
         cfg,now=self.settings,self.monotonic()
         if self.book is None or self.book_seen is None or now-self.book_seen>cfg.max_book_age_s:
             return None
@@ -1008,7 +1008,7 @@ class Maker:
             await self.alerter.alert('紧急 IOC 已超过总时限，等待人工处理',urgent=True)
 
     async def _monitor_halted_tick(self):
-        """普通交易保持锁定；紧急能力只有一次三次/六十秒预算。"""
+        """Keep ordinary trading locked; emergency access gets a single budget of three attempts within sixty seconds."""
         cfg,now=self.settings,self.monotonic()
         position=self.state.positions[cfg.market]
         if (not position or self.emergency_attempted or self.ledger is None
@@ -1075,7 +1075,7 @@ class Maker:
         self.observation_at = now
 
     def record_quote_state(self, qualified, reason=None, *, event=False):
-        """计数表示触发次数；重复触发不重复累计同一段停报时长。"""
+        """Counts measure triggers; repeated triggers do not double-count the same quote-stop interval."""
         self.accrue_quote_time()
         if reason is not None and (event or reason != self.observed_reason):
             self.pause_counts[reason] += 1
@@ -1117,7 +1117,7 @@ class Maker:
                                 and decision.competition_linear is not None else None)}
 
     def observation_metrics(self):
-        """资格与停报按实际经过时间累计；盘口间隔取最近一个健康日志周期。"""
+        """Accumulate eligibility and quote-stop durations by elapsed time; use the latest health-log interval for order book update gaps."""
         self.accrue_quote_time()
         now = self.monotonic()
         while self.book_intervals and self.book_intervals[0][0] < now-self.settings.health_log_interval_s:
@@ -1175,7 +1175,7 @@ class Maker:
 
     @staticmethod
     def _deadman_ack_matches(message, timeout):
-        """只接受实测订阅确认；布尔值和数字字符串不能冒充超时秒数。"""
+        """Accept only observed subscription acknowledgments; booleans and numeric strings cannot stand in for timeout seconds."""
         data = message.get('data')
         return (message.get('type') == 'subscribed'
                 and message.get('channel') == 'cancelAllOrdersAfterPerps'
@@ -1183,7 +1183,7 @@ class Maker:
                 and data['timeout_seconds'] == timeout)
 
     async def disable_deadman(self):
-        """撤单核零后发送关闭订阅，并等待本次 timeout_seconds=0 的确认。"""
+        """After confirming cancellation, disable the subscription and await acknowledgment of this timeout_seconds=0 request."""
         self._deadman_disable_requested = True
         self._deadman_disabled_event.clear()
 
@@ -1230,12 +1230,12 @@ class Maker:
         await self.send(self.private_ws,{'op':'ping'})
 
     async def _public_heartbeat(self, ws, receiving):
-        """公开心跳只保活未登录连接，与私有续期和行情新鲜度独立。"""
+        """Public heartbeats keep unauthenticated connections alive, independently of private renewal and data freshness."""
         missed = 0
         next_ping = self.monotonic() + self.settings.public_ping_s
 
         async def ping_and_wait():
-            # 与发送紧邻，上一轮迟到 pong 不能替本轮确认。
+            # Keep this adjacent to sending; a late pong from the prior cycle cannot acknowledge this one.
             self._public_pong_event.clear()
             self._public_ping_deadline = self.monotonic() + 10
             await self.send(ws, {'op': 'ping'})
@@ -1265,7 +1265,7 @@ class Maker:
                 raise TimeoutError('公开连接连续两次心跳未在 10 秒内收到 pong')
 
     async def _public_feed(self, ws):
-        """接收和心跳任一结束即回收另一任务，失败交由既有退避流程处理。"""
+        """When either receiver or heartbeat ends, reap the other; pass failures to the existing backoff flow."""
         async def receive():
             async for message in ws:
                 await self.on_public(message)
@@ -1284,12 +1284,12 @@ class Maker:
             await asyncio.gather(receiving, heartbeat, return_exceptions=True)
 
     def public_is_healthy(self, now):
-        """本市场盘口持续更新才证明公开连接健康；重连后等待新盘口。"""
+        """Only ongoing updates to this market order book prove public connection health; wait for a fresh order book after reconnecting."""
         return (not self.public_disconnected and self.book_seen is not None
                 and 0 <= now-self.book_seen <= self.settings.max_book_age_s)
 
     def _mark_source_times(self, row, message=None):
-        """解析并校验源时间；有效性之外，入站另按 lastUpdatedTime 排序。"""
+        """Parse and validate source time; ingestion also orders by lastUpdatedTime independently of validity."""
         source_times, errors = [], []
         fields = [('lastUpdatedTime', row)]
         if message is not None:
@@ -1333,14 +1333,14 @@ class Maker:
         if ws:
             await self.guard.trigger(reason)
         else:
-            # 拒绝本次 REST 确认不能污染此前有效的 A/B；其原有期限继续自然计时。
+            # Rejecting this REST confirmation must not alter prior valid A/B state; their original expiry clocks keep running.
             reason = '标记价格时间异常：'+detail+'，拒绝本次 REST 确认'
         if self.logger is not None:
             self.logger.warning(reason)
         await self.alerter.alert(reason, key='标记价格时间异常')
 
     async def poll_mark_rest_once(self):
-        """公开只读确认独立节流，不进入签名 API 队列，也不消费交易令牌。"""
+        """Throttle public read-only confirmations separately, outside the signed API queue and trading token budget."""
         cfg, now = self.settings, self.monotonic()
         if (self.public_http is None or self._mark_rest_polling or not cfg.mark_channel
                 or self.stop_event.is_set() or not self.gate.is_open):
@@ -1351,7 +1351,7 @@ class Maker:
                 or self.mark_rest_last_poll is not None
                 and now-self.mark_rest_last_poll < cfg.mark_rest_poll_interval_s):
             return False
-        # 发起时即占用本轮频率预算；失败和慢请求均不能触发密集重试。
+        # Consume this cycle's rate budget at request start; failures and slow requests must not cause rapid retries.
         self.mark_rest_last_poll, self._mark_rest_polling = now, True
         try:
             async with asyncio.timeout(cfg.request_timeout_s):
@@ -1380,7 +1380,7 @@ class Maker:
                 raise ValueError('公开 REST 标记价格或预言机价格无效')
             conflict = self._mark_conflict_reason(source_times[0], mark)
             now = self.monotonic()
-            # REST 无 inPriceDiscovery，确认价格绝不能延长 WS 状态或清除 true。
+            # REST has no inPriceDiscovery; price confirmation must never extend WS state or clear true.
             self.engine.mark = (mark, now)
             self.engine.oracle = (oracle, now) if oracle is not None else None
             self.engine.mark_source_times = source_times
@@ -1401,7 +1401,7 @@ class Maker:
             self._mark_rest_polling = False
 
     async def mark_rest_loop(self):
-        """确认请求与策略循环并行，HTTP 等待不阻塞盘口守卫和撤单。"""
+        """Run confirmation requests alongside the strategy loop so HTTP waits never block order book guards or cancellation."""
         while self.gate.is_open and not self.stop_event.is_set():
             await self.poll_mark_rest_once()
             await self.sleep(min(1.0, self.settings.mark_rest_poll_after_s,
@@ -1448,7 +1448,7 @@ class Maker:
             if row.get('market') != cfg.market:
                 continue
             if channel == 'depthBooksPerps':
-                # 做市可在稀疏第三方盘口中围绕新鲜 mark 报价；其他解析入口仍要求双侧。
+                # Market making may quote around a fresh mark in a sparse third-party order book; other parsers still require both sides.
                 book = parse_ondo({'success':True,'result':row},cfg.market,int(self.clock()*1000),
                                   allow_empty=True)
                 if (book.source_ms is None or self.clock()*1000-book.source_ms > cfg.max_book_age_s*1000
@@ -1467,11 +1467,11 @@ class Maker:
                     await self._reject_mark_time(str(error), ws=True)
                     continue
                 if self._mark_is_older(source_times[0], origin='ws'):
-                    # 整行迟到消息仅计数，不能延长价格或价格发现状态的有效期。
+                    # Count fully late messages only; they cannot extend price or price-discovery validity.
                     continue
                 discovery = row.get('inPriceDiscovery')
                 if type(discovery) is not bool:
-                    # 坏消息立即停报，保留有效状态和两个时钟，等待明确布尔值恢复。
+                    # Pause quotes immediately on invalid messages; preserve valid state and both clocks until an explicit boolean restores it.
                     self.engine.price_discovery_invalid = True
                     reason = 'inPriceDiscovery 字段缺失或类型无效，价格发现状态未确认，双侧停止报价'
                     await self.guard.trigger(reason)
@@ -1488,7 +1488,7 @@ class Maker:
                 conflict = self._mark_conflict_reason(source_times[0], mark)
                 now = self.monotonic()
                 if self.engine.mark is None or mark != self.engine.mark[0]:
-                    # 不同 WS 值不能借用旧值的确认；同价推送保留独立 REST 有效期。
+                    # A different WS value cannot reuse prior confirmation; same-price updates retain independent REST validity.
                     self.engine.mark_rest_seen = None
                 self.engine.mark_source_times = self.engine.discovery_source_times = tuple(source_times)
                 self.engine.mark_accepted_source_time = source_times[0]
@@ -1515,7 +1515,7 @@ class Maker:
                           '数量':str(quantity),'主动方向':row['aggressor_side']}, level=logging.DEBUG)
 
     async def _private_input_failure(self, detail, *, subscription=False):
-        """私有字段契约待沙盒样本核实；不完整输入一律等待 REST 对账。"""
+        """Private field contracts await sandbox samples; incomplete input always waits for REST reconciliation."""
         reason = ('私有频道订阅失败' if subscription else '私有推送字段无效')
         reason += '（待沙盒样本）：'+detail
         if detail.startswith(('ordersPerps', 'fillsPerps')):
@@ -1621,7 +1621,7 @@ class Maker:
                 return
         if channel == 'positionsPerps' and not any(
                 row['market'] == self.settings.market for row in rows):
-            # 完整快照未列出本市场即为零；仍保留同步屏障，等待 REST 核实。
+            # Omission from a full snapshot means zero for this market; retain the sync barrier pending REST verification.
             position = normalize_position({'market': self.settings.market,
                                            'direction': 'neutral', 'netQuantity': '0'})
             if self.state.note_position_event(self.settings.market, position):
@@ -1649,9 +1649,9 @@ class Maker:
                         raise ValueError('清算状态必须是布尔值')
                     self.state.apply_balance_snapshot(balance,source='ws')
                 elif channel == 'fillsPerps':
-                    # 待小额实盘样本；继续保留既有字段校验与容错路径。
+                    # Await small live-trading samples; retain existing field validation and fallback paths.
                     fill = normalize_fill(row,market=self.settings.market)
-                    # 先验证账本时间范围，避免无效时间导致成交已入账而账本未写入。
+                    # Validate the ledger time range first so invalid times cannot leave fills accounted for without a ledger write.
                     try:
                         datetime.fromtimestamp(fill['time_ms']/1000, ZoneInfo('UTC'))
                     except OSError:
@@ -1724,7 +1724,7 @@ class Maker:
                     self.public_disconnected = True
                 if self.settings.mode != 'dry-run' and self.gate.is_open:
                     await self.guard.trigger('私有连接中断' if private else '公开连接中断')
-                # 连续失败可能发送紧急告警；先完成守卫撤单，避免告警阻塞风险清理。
+                # Repeated failures may send urgent alerts; complete guard cancellations first so alerts cannot block risk cleanup.
                 delay = await reconnect.failed(source, error)
                 await self.alerter.alert('私有连接中断' if private else '公开连接中断',key='行情断线')
             finally:
@@ -1735,12 +1735,12 @@ class Maker:
                     self.public_ws = None
                     self.public_disconnected = True
                 if ws is not None:
-                    # close 帧也是发送；封门后不发送 close，交给进程退出释放套接字。
+                    # A close frame is also a send; once the gate closes, leave socket release to process exit.
                     if self.gate.is_open:
                         try:
                             await ws.close()
                         except Exception as error:
-                            # 清理失败不能覆盖取消，也不能把同一次断线计数两遍。
+                            # Cleanup failures must not mask cancellation or count the same disconnect twice.
                             if not cancelled and not asyncio.current_task().cancelling():
                                 if delay is None:
                                     delay = await reconnect.failed(source, error)
@@ -1834,7 +1834,7 @@ class Maker:
             if (any(row.get(k) is True for k in ('disabled','isClosed','reduceOnly'))
                     or row.get('tradingState', 'TRADING') != 'TRADING'):
                 raise ValueError('市场当前不支持双边交易')
-            # 兼容旧快照；真实 perps 元数据必须给出默认杠杆、分档杠杆与基础持仓上限。
+            # Support old snapshots; live perps metadata must provide default leverage, tiered leverage, and the base-position cap.
             default = row['defaultLeverage'] if nested else row.get('defaultLeverage')
             cap = row['maxPositionBaseSize'] if nested else row.get('maxPositionBaseSize')
             margins = row['marginInfo'] if nested else row.get('marginInfo', [])
@@ -1860,7 +1860,7 @@ class Maker:
                            if row.get('market', self.settings.market) == self.settings.market]
                 if len(matches) > 1:
                     raise ValueError
-                # 未设置市场杠杆时采用公开默认值；旧快照无默认值则按一倍保守估算。
+                # Use the public default when market leverage is unset; conservatively assume 1x for old snapshots without a default.
                 value = number(matches[0]['leverage']) if matches else rules.default_leverage or D(1)
                 if value < 1:
                     raise ValueError
@@ -1874,7 +1874,7 @@ class Maker:
         self.rules = rules
 
     def record_funding(self):
-        """以持久账本中上次累计资金费为基准，写后崩溃可幂等恢复。"""
+        """Use the prior cumulative funding in the persistent ledger as the baseline for idempotent recovery after a post-write crash."""
         total=self.state.balances.get('totalFundingPayments')
         if total is None:
             return
@@ -1887,7 +1887,7 @@ class Maker:
             delta=total-previous
         else:
             delta=D(0)
-        # 待沙盒核实：totalFundingPayments 正数为支出，账本 funding 正数为收入。
+        # Pending sandbox verification: positive totalFundingPayments means expense, while positive ledger funding means income.
         self.ledger.record('funding:'+str(int(self.clock()*1000))+':'+str(total),funding=-delta)
 
     async def strategy_loop(self):
@@ -1958,14 +1958,14 @@ class Maker:
             await self.sleep(1)
             if self.stop_event.is_set():
                 return
-            # 只读私有连接同样定期 ping，pong 是 PrivateFeed 的唯一存活证据。
+            # Read-only private connections also ping regularly; pongs are the only proof of PrivateFeed liveness.
             if self.settings.mode == 'dry-run':
                 if self.private_ws is not None and self.private_logged_in and (not hasattr(self, '_last_renewal')
                         or self.monotonic()-self._last_renewal >= self.watchdog.check_interval_s):
                     try:
                         await asyncio.wait_for(self.ping(), timeout=self.watchdog.ping_timeout_s)
                     except Exception as error:
-                        # 只读模式等待 feed 自行退避重连，存活状态仍由实际 pong 判定。
+                        # Read-only mode lets the feed back off and reconnect; actual pongs still determine liveness.
                         self.log({'事件': '只读私有心跳失败', '异常类型': type(error).__name__},
                                  level=logging.WARNING)
                     finally:
@@ -2037,20 +2037,20 @@ class Maker:
             print(message, file=sys.stderr)
             if self.started and self.settings.mode!='dry-run':
                 result = await self.trip_halt(message)
-                # 熔断任务幂等；已有熔断仍需单独上报本次运行异常。
+                # Halt tasks are idempotent; an existing halt still requires separate reporting of this run failure.
                 if result.reason != message:
                     await self.urgent_alert(message)
             else:
                 self.exit_code=2
         finally:
-            # 清理、任务回收和紧急 HTTP 等待共享取消保护，重复取消也不能越过。
+            # Cleanup, task reaping, and urgent HTTP waits share cancellation protection, even under repeated cancellation.
             await _wait_cleanup(asyncio.create_task(self._finish_run(tasks, installed)))
         return self.exit_code
 
     async def _finish_run(self, tasks, installed):
         self.request_stop()
         try:
-            # 先封锁策略，再处理在途和撤单；私有消费保留到清理结束。
+            # Block the strategy first, then handle in-flight requests and cancellation; keep the private consumer alive until cleanup ends.
             if self.started:
                 await self.shutdown()
         finally:

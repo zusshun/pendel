@@ -1,4 +1,4 @@
-"""M10 首份有效行情等待与后续过期使用内存依赖验证。"""
+"""M10 tests for waiting on the first valid market data and its subsequent expiry using in-memory dependencies."""
 
 import unittest
 from dataclasses import replace

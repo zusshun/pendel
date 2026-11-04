@@ -1,4 +1,4 @@
-"""M3：发送时对两侧最终持仓端点执行硬上限复核。"""
+"""M3: check hard limits on both final position endpoints at send time."""
 
 import unittest
 from decimal import Decimal as D
