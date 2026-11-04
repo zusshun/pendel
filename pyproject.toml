@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ondo-paper-research"
+version = "0.1.0"
+description = "Ondo／Lighter 单标的公开盘口录制与离线模拟"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+ondo-research = "pendle.cli:main"
+
+[tool.setuptools]
+packages = ["pendle"]

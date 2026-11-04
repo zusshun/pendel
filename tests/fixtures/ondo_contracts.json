@@ -1,0 +1,37 @@
+{
+  "success": true,
+  "result": [
+    {
+      "market": "INTC-USD.P",
+      "displayName": "INTCUSD",
+      "productType": "perpetual",
+      "contractType": "linear",
+      "baseCurrency": "INTC",
+      "quoteCurrency": "USD",
+      "disabled": false,
+      "lastPrice": "62.71",
+      "baseVolume": "68074.6",
+      "quoteVolume": "4268958.166",
+      "usdVolume": "4268958.17",
+      "bid": "62.69",
+      "ask": "62.71",
+      "high": "66.88",
+      "low": "62.51",
+      "openInterest": "26013.3",
+      "openInterestUsd": "1628692.71",
+      "indexPrice": "63.5750000000000028",
+      "indexCurrency": "USD",
+      "fundingRate": "0.0000063",
+      "nextFundingRate": "0.0000063",
+      "nextFundingRateTimestamp": "2026-11-02T17:00:00Z",
+      "makerFee": "0.0001",
+      "takerFee": "0.00025",
+      "priceChangePercent": "-5.056775170325510976532929598788796366",
+      "isClosed": false,
+      "reduceOnly": false,
+      "tags": [
+        "Stock"
+      ]
+    }
+  ]
+}
