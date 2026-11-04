@@ -45,6 +45,15 @@ TERMINAL = frozenset({OrderStatus.REJECTED, OrderStatus.FILLED,
                       OrderStatus.CANCELED, OrderStatus.ABSENT})
 
 
+def _position_identity(position):
+    """Exclude valuation and observation fields from the economic position identity."""
+    quantity = number(position['quantity'])
+    direction = position.get('direction',
+                             'long' if quantity > 0 else 'short' if quantity < 0 else 'neutral')
+    return (direction, number(position.get('netQuantity', abs(quantity))),
+            number(position['averageEntryPrice']) if 'averageEntryPrice' in position else None)
+
+
 @dataclass
 class Order:
     client_order_id: str
@@ -152,17 +161,11 @@ class AccountState:
                      if not order.terminal and (market is None or order.market == market))
 
     def note_position_event(self, market, position=None):
-        """Only private position content changes invalidate verification of zero open orders; REST confirms snapshots after a quiet period."""
+        """Only direction, net quantity, or entry price changes invalidate private position verification."""
         if position is not None:
-            # Push timestamps only indicate repeated observations, not changes to position content.
-            content = {key: value for key, value in position.items()
-                       if key not in ('time_ms', 'time', 'timestamp')}
-            confirmed = self.position_details.get(market, {})
-            # Matching cache content must also match current quantity and REST-confirmed details, so stale content is not ignored.
-            if (self._position_event_contents.get(market) == content
-                    and number(position['quantity']) == self.positions[market]
-                    and all(value == confirmed[key] for key, value in content.items()
-                            if key != 'quantity' and key in confirmed)):
+            content = _position_identity(position)
+            # REST or fills may still lag this observation; repeats must not restart synchronization.
+            if self._position_event_contents.get(market) == content:
                 return False
             self._position_event_contents[market] = content
         self.market_revisions[market] += 1
@@ -260,6 +263,7 @@ class AccountState:
                 raise OrderStateError('累计成交超过原始订单量')
         self.fills[fill_id] = value
         self.last_fill_monotonic[market] = self.monotonic()
+        position_before_fill = self.positions[market]
         included = self._position_order_coverage.get(client_order_id, (-1, Decimal(0)))[1]
         if market in self._untimed_positions:
             previous = order.fill_total if order else Decimal(0)
@@ -267,6 +271,13 @@ class AccountState:
             self.positions[market] += delta if side == 'buy' else -delta
         elif at > self.position_bases[market][1]:
             self.positions[market] += signed
+        content = self._position_event_contents.get(market)
+        if content is not None and self.positions[market] != position_before_fill:
+            observed_quantity = (content[1] if content[0] == 'long'
+                                 else -content[1] if content[0] == 'short' else Decimal(0))
+            # Preserve an observation that arrived before its fill; invalidate only a conflicting quantity.
+            if self.positions[market] != observed_quantity:
+                self._position_event_contents.pop(market, None)
         self.realized_pnl += pnl
         self.fees += fee
         self.funding += funding
@@ -848,6 +859,12 @@ class OrderManager:
                 number(pos['unrealized_pnl'])
                 position_confirmed = await self._reconcile_untimed_position(market, pos['quantity'])
             if position_confirmed:
+                content = self.state._position_event_contents.get(market)
+                confirmed = _position_identity(pos)
+                # A genuine REST rebase must allow a previously seen conflicting WS position to resynchronize.
+                if content is not None and any(old != new for old, new in zip(content, confirmed)
+                                               if old is not None and new is not None):
+                    self.state._position_event_contents.pop(market, None)
                 self.state.position_details[market] = dict(pos)
             before_balance = self.state.revision
             balance = await self._call(self.api.get_balances())

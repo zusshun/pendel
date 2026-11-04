@@ -32,15 +32,15 @@ class M12StateDedupTests(unittest.TestCase):
         self.assertTrue(self.state.note_position_event(MARKET, self.zero))
         self.assertEqual(self.state.market_revisions[MARKET], revision + 1)
 
-    def test_identical_ws_content_is_not_duplicate_of_different_current_position(self):
+    def test_repeated_ws_position_conflict_invalidates_verification_once(self):
         self.state.apply_untimed_position_snapshot(MARKET, '1')
         self.assertTrue(self.state.note_position_event(MARKET, self.zero))
 
         revision = self.state.market_revisions[MARKET]
-        self.assertTrue(self.state.note_position_event(MARKET, self.zero))
-        self.assertEqual(self.state.market_revisions[MARKET], revision + 1)
+        self.assertFalse(self.state.note_position_event(MARKET, self.zero))
+        self.assertEqual(self.state.market_revisions[MARKET], revision)
 
-    def test_ws_metadata_after_same_quantity_rest_change_is_not_duplicate(self):
+    def test_ws_valuation_after_same_quantity_rest_change_is_duplicate(self):
         position = normalize_position({'market': MARKET, 'quantity': '1',
                                        'unrealizedPnl': '0', 'markPrice': '100'})
         self.state.apply_untimed_position_snapshot(MARKET, '1')
@@ -53,13 +53,13 @@ class M12StateDedupTests(unittest.TestCase):
             position, unrealizedPnl='-10', markPrice='90'))
         revision = self.state.market_revisions[MARKET]
 
-        for change in (1, 2):
-            self.assertTrue(self.state.note_position_event(MARKET, position))
-            self.assertEqual(self.state.market_revisions[MARKET], revision + change)
+        for _ in range(2):
+            self.assertFalse(self.state.note_position_event(MARKET, position))
+            self.assertEqual(self.state.market_revisions[MARKET], revision)
 
         self.state.position_details[MARKET] = dict(position)
         self.assertFalse(self.state.note_position_event(MARKET, position))
-        self.assertEqual(self.state.market_revisions[MARKET], revision + 2)
+        self.assertEqual(self.state.market_revisions[MARKET], revision)
 
     def test_ws_balance_after_rest_change_compares_current_confirmed_balance(self):
         for timed in (False, True):
