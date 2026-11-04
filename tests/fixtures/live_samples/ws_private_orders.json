@@ -1,0 +1,55 @@
+{
+ "_说明": "2026-11-04 正式环境小额验收实测的 ordersPerps 消息（新挂单 open → 撤单 canceled）；data 为订单对象数组",
+ "orders_updates": [
+  {
+   "type": "update",
+   "channel": "ordersPerps",
+   "timestamp": "2026-11-04T11:07:56.045756519Z",
+   "data": [
+    {
+     "orderId": "KHOMDS57D2M3YOFC23HY4AHE425T4XQM",
+     "clientOrderId": "maker-0c566a382fa04ecf-IBM-USD_P-buy-1",
+     "side": "buy",
+     "price": "251.62",
+     "market": "IBM-USD.P",
+     "filledSize": "0",
+     "lastFillSize": "0",
+     "filledCost": "0",
+     "fee": "0",
+     "status": "open",
+     "createdAt": "2026-11-04T11:07:56.045756519Z",
+     "type": "limit",
+     "timeInForce": "GTC",
+     "postOnly": true,
+     "size": "0.07"
+    }
+   ]
+  },
+  {
+   "type": "update",
+   "channel": "ordersPerps",
+   "timestamp": "2026-11-04T11:07:57.033756238Z",
+   "data": [
+    {
+     "orderId": "KHOMDS57D2M3YOFC23HY4AHE425T4XQM",
+     "clientOrderId": "maker-0c566a382fa04ecf-IBM-USD_P-buy-1",
+     "side": "buy",
+     "price": "251.62",
+     "market": "IBM-USD.P",
+     "filledSize": "0",
+     "lastFillSize": "0",
+     "filledCost": "0",
+     "fee": "0",
+     "status": "canceled",
+     "createdAt": "2026-11-04T11:07:56.045756519Z",
+     "canceledAt": "2026-11-04T11:07:57.033756238Z",
+     "type": "limit",
+     "timeInForce": "GTC",
+     "postOnly": true,
+     "size": "0.07"
+    }
+   ]
+  }
+ ],
+ "fills_updates": []
+}

@@ -1,0 +1,19 @@
+{
+ "type": "update",
+ "channel": "markPricesPerps",
+ "timestamp": "2026-11-04T06:41:30.594109173Z",
+ "data": [
+  {
+   "market": "IBM-USD.P",
+   "markPrice": "247.81",
+   "oraclePrice": "248.1146357291905471",
+   "lastExternalPrice": "248.1146357291905471",
+   "lastUpdatedTime": "2026-11-04T06:41:27.798109907Z",
+   "discoveryLower": "0",
+   "discoveryUpper": "0",
+   "discoveryLowerTrigger": "0",
+   "discoveryUpperTrigger": "0",
+   "inPriceDiscovery": false
+  }
+ ]
+}

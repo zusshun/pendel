@@ -1,8 +1,9 @@
 import json
-import threading
+import io
 import unittest
 from decimal import Decimal as D
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from unittest.mock import patch
+from urllib.error import HTTPError
 from pathlib import Path
 
 from pendle.market import (Book, HttpClient, MarketError, RateLimited,
@@ -68,32 +69,23 @@ class MarketTests(unittest.TestCase):
 class HttpTests(unittest.TestCase):
     def test_get_headers_json_and_rate_limit_without_retries(self):
         seen = []
-        class Handler(BaseHTTPRequestHandler):
-            def do_GET(self):
-                seen.append((self.command, self.headers.get('User-Agent')))
-                if self.path == '/limited':
-                    self.send_response(429)
-                    self.send_header('Retry-After', '120')
-                    self.end_headers()
-                    return
-                self.send_response(200)
-                self.end_headers()
-                self.wfile.write(b'{"code":200}')
-            def log_message(self, *args):
-                pass
-        server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
-        thread.start()
-        try:
+
+        def urlopen(request, *, timeout):
+            seen.append((request.get_method(), request.get_header('User-agent')))
+            self.assertEqual(request.get_header('Accept'), 'application/json')
+            self.assertEqual(timeout, 1)
+            if request.full_url.endswith('/limited'):
+                raise HTTPError(request.full_url, 429, '限流',
+                                {'Retry-After': '120'}, io.BytesIO())
+            return io.BytesIO(b'{"code":200}')
+
+        with patch('pendle.market.urllib.request.urlopen', side_effect=urlopen) as transport:
             client = HttpClient(timeout_s=1)
-            base = f'http://127.0.0.1:{server.server_port}'
+            base = 'https://market.example.invalid'
             self.assertEqual(client.get_json(base + '/ok'), {'code': 200})
             with self.assertRaises(RateLimited) as caught:
                 client.get_json(base + '/limited')
             self.assertEqual(caught.exception.retry_after_s, 60)
             self.assertEqual(len(seen), 2)
             self.assertEqual(seen[0], ('GET', 'pendle-research/0.1'))
-        finally:
-            server.shutdown()
-            server.server_close()
-            thread.join()
+            self.assertEqual(transport.call_count, 2)

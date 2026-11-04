@@ -1,0 +1,17 @@
+{
+  "_说明": "2026-11-04 服务器实测，只读登录与订阅；密钥已脱敏；账户无持仓、无挂单，余额 300。ordersPerps/fillsPerps 尚无事件样本（无订单）。",
+  "login_request_format": {"op": "login", "args": {"key": "<ONDO_API_KEY>", "time": "1793777622865", "sign": "<hex HMAC-SHA256(secret, time + 'ondo_perps_ws_login')>"}},
+  "login_note": "time 必须为字符串毫秒；以整数发送时服务器不回任何消息直接断开连接（实测）",
+  "loggedIn": {"type": "loggedIn", "timestamp": "2026-11-04T07:33:42.865304526Z"},
+  "subscribed_orders": {"type": "subscribed", "channel": "ordersPerps", "timestamp": "2026-11-04T07:33:42.869304524Z", "data": {"op": "subscribe", "channel": "ordersPerps"}},
+  "subscribed_fills": {"type": "subscribed", "channel": "fillsPerps", "timestamp": "2026-11-04T07:33:42.873304523Z", "data": {"op": "subscribe", "channel": "fillsPerps"}},
+  "subscribed_positions": {"type": "subscribed", "channel": "positionsPerps", "timestamp": "2026-11-04T07:33:42.873304523Z", "data": {"op": "subscribe", "channel": "positionsPerps"}},
+  "subscribed_balance": {"type": "subscribed", "channel": "balancePerps", "timestamp": "2026-11-04T07:33:42.873304523Z", "data": {"op": "subscribe", "channel": "balancePerps"}},
+  "positions_update_empty": {"type": "update", "channel": "positionsPerps", "timestamp": "2026-11-04T07:33:42.873304523Z", "data": []},
+  "balance_update": {"type": "update", "channel": "balancePerps", "timestamp": "2026-11-04T07:33:42.873304523Z", "data": {"walletBalance": "300", "realizedPnl": "0", "unrealizedPnl": "0", "marginBalance": "300", "usedMargin": "0", "availableMargin": "300", "withdrawableMargin": "300", "maintenanceMarginRequirement": "0", "totalMaintenanceMargin": "0", "marginRatio": "0", "leverage": "0", "underLiquidation": false, "totalFundingPayments": "0", "totalTradingFees": "0", "totalPnL": "0", "netInvested": "300"}},
+  "push_frequency_note": "positionsPerps 与 balancePerps 在无变化时也约每 80ms 重复推送相同内容",
+  "pong": {"type": "pong", "timestamp": "2026-11-04T07:33:42.873304523Z"},
+  "deadman_ack_enable": {"type": "subscribed", "channel": "cancelAllOrdersAfterPerps", "timestamp": "2026-11-04T07:34:17.349289433Z", "data": {"op": "subscribe", "channel": "cancelAllOrdersAfterPerps", "timeout_seconds": 30}},
+  "deadman_ack_disable": {"type": "subscribed", "channel": "cancelAllOrdersAfterPerps", "timestamp": "2026-11-04T07:34:23.353287307Z", "data": {"op": "subscribe", "channel": "cancelAllOrdersAfterPerps", "timeout_seconds": 0}},
+  "rest_balance_zero_marginRatio_note": "余额为 0 时 REST /v1/perps/balance 的 marginRatio 返回 \"0\"（文档写 9999）"
+}

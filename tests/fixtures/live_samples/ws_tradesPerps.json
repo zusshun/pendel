@@ -1,0 +1,16 @@
+{
+ "type": "update",
+ "channel": "tradesPerps",
+ "timestamp": "2026-11-04T06:41:36.346107028Z",
+ "data": [
+  {
+   "market": "IBM-USD.P",
+   "price": "247.92",
+   "size": "1.21",
+   "cost": "299.9832",
+   "aggressor_side": "sell",
+   "time": "2026-11-04T06:41:36.34210703Z",
+   "id": "51c3450c50a4183a5241fe9392690067"
+  }
+ ]
+}

@@ -71,8 +71,17 @@ def output_json(value, report=None):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description='Ondo／Lighter 公开盘口录制与离线模拟回放，无真实交易')
+    parser = argparse.ArgumentParser(description='Ondo／Lighter 公开行情研究与做市，默认只读')
     commands = parser.add_subparsers(dest='command', required=True)
+    from .bt_cli import COMMANDS, dispatch, register_commands
+    register_commands(commands)
+    from . import maker_cli
+    maker_cli.register_commands(commands)
+    collect = commands.add_parser('collect', help='常驻采集公开实时行情')
+    collect.add_argument('--config', type=Path, required=True, help='采集 TOML 配置')
+    collected = commands.add_parser('import-collected', help='导入采集服务的压缩 JSONL')
+    collected.add_argument('--src', type=Path, required=True, help='采集文件或目录')
+    collected.add_argument('--db', type=Path, default=Path('data/history.sqlite'), help='历史数据库')
     for name, help_text in (('record', '有限时长录制公开盘口'),
                             ('replay', '只读回放已录制会话'), ('demo', '离线生成演示数据并回放')):
         sub = commands.add_parser(name, help=help_text, description=help_text)
@@ -88,6 +97,22 @@ def main(argv=None):
             sub.add_argument('--run-id', help='会话 ID；省略时使用最新会话')
     args = parser.parse_args(argv)
     try:
+        if args.command in maker_cli.COMMANDS:
+            return maker_cli.dispatch(args)
+        if args.command == 'collect':
+            from .bt_config import CollectSettings
+            settings = CollectSettings.from_file(args.config)
+            from .collector import run_collect
+            return run_collect(settings)
+        if args.command == 'import-collected':
+            from .collected_import import import_collected
+            from .history import HistoryStore
+            with HistoryStore(args.db) as store:
+                result = import_collected(args.src, store)
+            output_json(result)
+            return 0
+        if args.command in COMMANDS:
+            return dispatch(args, output_json=output_json, protect_inputs=protect_inputs)
         protect_inputs(getattr(args, 'report', None), args.db, args.config)
         settings = ((Settings.read_values(args.config) if args.command == 'replay'
                      else Settings.from_file(args.config)) if args.config else None)

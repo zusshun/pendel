@@ -1,0 +1,53 @@
+[
+ {
+  "type": "subscribed",
+  "channel": "depthBooksPerps",
+  "timestamp": "2026-11-04T06:41:30.53010919Z",
+  "data": {
+   "op": "subscribe",
+   "channel": "depthBooksPerps",
+   "limit": 100
+  }
+ },
+ {
+  "type": "subscribed",
+  "channel": "tradesPerps",
+  "timestamp": "2026-11-04T06:41:30.594109173Z",
+  "data": {
+   "op": "subscribe",
+   "channel": "tradesPerps"
+  }
+ },
+ {
+  "type": "subscribed",
+  "channel": "markPricesPerps",
+  "timestamp": "2026-11-04T06:41:30.594109173Z",
+  "data": {
+   "op": "subscribe",
+   "channel": "markPricesPerps"
+  }
+ },
+ {
+  "type": "error",
+  "msg": "channel unsupported",
+  "timestamp": "2026-11-04T06:41:30.594109173Z"
+ },
+ {
+  "type": "subscribed",
+  "channel": "topOfBooksPerps",
+  "timestamp": "2026-11-04T06:41:30.594109173Z",
+  "data": {
+   "op": "subscribe",
+   "channel": "topOfBooksPerps"
+  }
+ },
+ {
+  "type": "subscribed",
+  "channel": "fundingRatesPerps",
+  "timestamp": "2026-11-04T06:41:30.594109173Z",
+  "data": {
+   "op": "subscribe",
+   "channel": "fundingRatesPerps"
+  }
+ }
+]

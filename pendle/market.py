@@ -56,7 +56,7 @@ class Book:
     asks: tuple
 
     @classmethod
-    def make(cls, venue, symbol, received_ms, source_ms, bids, asks):
+    def make(cls, venue, symbol, received_ms, source_ms, bids, asks, *, allow_empty=False):
         if venue not in ('ondo', 'lighter') or not isinstance(symbol, str) or not symbol:
             raise MarketError('盘口来源或标的无效')
         for value in (received_ms, source_ms):
@@ -74,12 +74,12 @@ class Book:
                         raise MarketError('价格必须为正，数量不能为负')
                     if size:
                         levels[price] = levels.get(price, Decimal(0)) + size
-                if not levels:
+                if not levels and not allow_empty:
                     raise MarketError('盘口缺少有效双边深度')
                 sides.append(tuple(sorted(levels.items(), reverse=reverse)))
         except (TypeError, KeyError, ValueError) as exc:
             raise MarketError('盘口价格数量格式无效：' + str(exc)) from exc
-        if sides[0][0][0] >= sides[1][0][0]:
+        if sides[0] and sides[1] and sides[0][0][0] >= sides[1][0][0]:
             raise MarketError('盘口买卖价交叉或相等')
         return cls(venue, symbol, received_ms, source_ms, sides[0], sides[1])
 
@@ -101,7 +101,7 @@ class Book:
             raise MarketError('保存的盘口字段无效') from exc
 
 
-def parse_ondo(payload, market, received_ms):
+def parse_ondo(payload, market, received_ms, *, allow_empty=False):
     try:
         if payload.get('success') is not True:
             raise MarketError('Ondo 返回失败标识')
@@ -109,7 +109,8 @@ def parse_ondo(payload, market, received_ms):
         if result['market'] != market:
             raise MarketError('Ondo 返回了其他标的')
         return Book.make('ondo', market.removesuffix('-USD.P'), received_ms,
-                         timestamp_ms(result['time']), result['bids'], result['asks'])
+                         timestamp_ms(result['time']), result['bids'], result['asks'],
+                         allow_empty=allow_empty)
     except (KeyError, TypeError, AttributeError) as exc:
         raise MarketError('Ondo 盘口字段缺失') from exc
 

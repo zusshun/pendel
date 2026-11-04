@@ -1,0 +1,90 @@
+# 历史回测仅处理公开行情，不含真实交易或认证。
+symbols = ["INTC", "DRAM", "CRCL"]
+quote_center = "binance_basis"
+
+# 金额与费率推荐使用十进制字符串。价格、数量步长是显式模拟假设。
+quote_notional = "800"
+max_inventory_usd = "1600"
+principal_usd = "1000"
+quote_offset_bps = "10"
+price_tick = "0.01"
+quantity_step = "0.1"
+# 每笔可见成交配对当时未过期的币安价，买卖两组分别保留最近 20 个样本。
+# 仅使用年龄不超过 6 小时的样本，两组中位数的均值为基差，无需买卖同时出现。
+basis_pair_max_age_s = "30"
+basis_samples = 20
+max_basis_age_s = "21600"
+max_ref_age_s = "120"
+# 币安参考价过期后，默认使用近期主动买卖成交价中位数的中点；none 则停挂。
+ref_fallback = "ondo_mid"
+max_ondo_mid_age_s = "1800"
+# 盘口中间价超过 120 秒失效；markout 最多等待目标时刻后 1800 秒的有效中心价。
+max_depth_age_s = "120"
+markout_max_delay_s = "1800"
+data_latency_ms = 100
+place_latency_ms = 500
+cancel_latency_ms = 500
+requote_bps = "2"
+requote_mode = "cancel_first"
+at_price_fill_ratio = "0.5"
+at_price_fill_ratios = ["0", "0.5", "1"]
+# 可见币安价格变化形成足够套利空间时，允许吃掉已生效订单的全部剩余数量。
+pickoff_enabled = true
+pickoff_edge_bps = "2.5"
+
+# 对冲只能选择 none 或 lighter_proxy；Lighter 成交价格是代理假设。
+hedge_mode = "none"
+hedge_latency_ms = 500
+lighter_basis_bps = "0"
+lighter_half_spread_bps = "1"
+hedge_slippage_bps = "1"
+guard_window_s = "10"
+guard_move_bps = "20"
+guard_latency_ms = 100
+guard_cooldown_s = "30"
+
+# 1 bps = 0.01%；以下费用和资金费均为情景假设。
+ondo_maker_fee_bps = "1"
+ondo_taker_fee_bps = "2.5"
+lighter_taker_fee_bps = "2.5"
+ondo_half_spread_bps = "1"
+# 强平优先使用该标的观测价差中位数的一半，上项仅作无观测时的回退。
+ondo_funding_bps_per_hour = "0"
+lighter_funding_bps_per_hour = "0"
+
+# 奖励规则未经官方确认，结果只在这些假设成立时有效。
+# reward_markets 是分摊市场数假设，87 对应设计记录的合约总数。
+pool_usdc_per_week = "110000"
+reward_markets = 87
+band_bps = "25"
+reward_weight = "flat"
+reward_two_sided = true
+min_quote_usd = "0"
+reward_mid_error_bps = "0"
+# 报告同时披露奖励中间价偏差为以下 bps 时的奖励。
+reward_mid_error_scenarios = ["0", "10", "20"]
+comp_source = "scenarios"
+comp_scenarios = ["1000", "3000", "10000", "30000", "100000", "300000", "1000000", "4000000"]
+request_interval_ms = 250
+http_timeout_s = "5"
+
+# 星期取 0（周一）到 6（周日），小时按北京时间；跨周时段自动环绕。
+[named_periods."周末"]
+start_weekday = 5
+start_hour = 9
+end_weekday = 0
+end_hour = 5
+
+# 未覆盖的标的沿用默认精度；币安符号默认拼接为 {SYM}USDT。
+[symbol_overrides.INTC]
+price_tick = "0.01"
+quantity_step = "0.1"
+binance_symbol = "INTCUSDT"
+
+[symbol_overrides.DRAM]
+price_tick = "0.01"
+quantity_step = "0.1"
+
+[symbol_overrides.CRCL]
+price_tick = "0.01"
+quantity_step = "0.1"
