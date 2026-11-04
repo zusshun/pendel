@@ -183,7 +183,7 @@ class MarkSourceFreshnessTests(unittest.IsolatedAsyncioTestCase):
         started = self.clock()
         for age, field, value in ((0, 'lastUpdatedTime', MISSING),
                                   (1, 'timestamp', '无法解析'),
-                                  (299.999, 'lastUpdatedTime', None)):
+                                  (1799.999, 'lastUpdatedTime', None)):
             self.clock.now = started+age
             message = self.message()
             target = message['data'][0] if field == 'lastUpdatedTime' else message
@@ -197,7 +197,7 @@ class MarkSourceFreshnessTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(sent), 1)
         self.assertEqual(len(alerter._pending), 1)
         self.assertIn('标记价格时间异常', alerter._pending)
-        self.clock.now = started+300
+        self.clock.now = started+1800
         await self.publish(self.message(update_age=3600.001))
         for _ in range(3):
             await asyncio.sleep(0)

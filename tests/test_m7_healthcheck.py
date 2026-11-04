@@ -121,25 +121,26 @@ class M7HealthcheckLiveTests(unittest.IsolatedAsyncioTestCase):
                          '启动告警耗时不能占用连接任务的 ACK 宽限')
         self.assertTrue(all(seen == self.clock() for seen in bot.watchdog.last_seen.values()))
 
-    async def test_each_hourly_summary_repeats_healthcheck_waiver_warning(self):
+    async def test_each_periodic_summary_repeats_healthcheck_waiver_warning(self):
         self.make_bot(healthcheck_waived=True)
         await self.health_once()
         for _ in range(2):
-            self.clock.now += 3600
+            self.clock.now += 14400
             await self.health_once()
-        summaries = [text for text in self.messages() if text.startswith('每小时摘要')]
+        summaries = [text for text in self.messages() if text.startswith('做市摘要')]
         self.assertEqual(len(summaries), 2)
         for text in summaries:
             self.assertIn(WARNING, text)
 
-    async def test_hourly_waiver_warning_survives_long_metrics_truncation(self):
+    async def test_periodic_waiver_warning_survives_long_metrics_truncation(self):
         bot = self.make_bot(healthcheck_waived=True)
         reason = '停报原因' * 1500
         bot.pause_counts[reason], bot.pause_seconds[reason] = 1, 1
         await self.health_once()
-        self.clock.now += 3600
+        self.clock.now += 14400
+        bot.pause_seconds[reason] += 1
         await self.health_once()
-        summaries = [text for text in self.messages() if text.startswith('每小时摘要')]
+        summaries = [text for text in self.messages() if text.startswith('做市摘要')]
         self.assertEqual(len(summaries), 1)
         self.assertTrue(WARNING in summaries[0], '摘要指标较长时也必须保留完整的心跳风险提醒')
 
@@ -150,7 +151,7 @@ class M7HealthcheckLiveTests(unittest.IsolatedAsyncioTestCase):
                                     healthcheck_waived=waived)
                 await bot.startup(live=True)
                 await self.health_once()
-                self.clock.now += 3600
+                self.clock.now += 14400
                 await self.health_once()
                 self.assertFalse(any(WARNING in text for text in self.messages()))
                 bot.instance.release()

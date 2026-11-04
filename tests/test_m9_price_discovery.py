@@ -203,7 +203,7 @@ class PriceDiscoveryTests(unittest.IsolatedAsyncioTestCase):
         self.bot.engine.mark_source_times = (self.clock.wall(), self.clock.wall())
         self.assertFalse(self.decision().eligible)
 
-    async def test_missing_and_invalid_alerts_share_five_minute_merge(self):
+    async def test_missing_and_invalid_alerts_share_thirty_minute_merge(self):
         sent = []
         # Isolate field alerts so successful cancellation notifications do not consume the same global send window.
         self.bot.settings = replace(self.settings, mode='dry-run')
@@ -217,7 +217,7 @@ class PriceDiscoveryTests(unittest.IsolatedAsyncioTestCase):
                           http=http, monotonic=self.clock)
         self.bot.alerter = alerter
         started = self.clock()
-        for age, value in ((0, MISSING), (1, 'false'), (299.999, MISSING)):
+        for age, value in ((0, MISSING), (1, 'false'), (1799.999, MISSING)):
             self.clock.now = started + age
             await self.mark(value)
             for _ in range(3):
@@ -225,7 +225,7 @@ class PriceDiscoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(sent), 1)
         self.assertIn('inPriceDiscovery', sent[0])
         self.assertEqual(len(alerter._pending), 1, '缺失和类型错误应使用同一合并键')
-        self.clock.now = started + 300
+        self.clock.now = started + 1800
         await self.mark(0)
         for _ in range(3):
             await asyncio.sleep(0)

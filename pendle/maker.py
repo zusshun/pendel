@@ -1147,6 +1147,7 @@ class Maker:
                 '守卫及停报原因': {reason: {'次数': self.pause_counts[reason], '时长秒': seconds}
                                   for reason, seconds in self.pause_seconds.items()},
                 '观测时长秒': elapsed,
+                '有资格时长秒': self.qualified_seconds,
                 '有资格时长占比': self.qualified_seconds/elapsed if elapsed else None}
 
     def log(self, row, *, level=logging.INFO):
@@ -1931,13 +1932,35 @@ class Maker:
             unhealthy_tasks = list(self.watchdog.unhealthy_tasks())
             healthy=not unhealthy_tasks and self.gate.is_open and self.halt.exit_code is None
             metrics = self.observation_metrics()
+            now = self.monotonic()
+            decision_current = (self.last_decision is not None and self.decision_seen is not None
+                and 0 <= now-self.decision_seen <= self.settings.max_book_age_s
+                and self.book is not None and self.book_seen is not None
+                and 0 <= now-self.book_seen <= self.settings.max_book_age_s
+                and self.engine.mark_is_fresh(now) and self.engine.discovery_is_fresh(now)
+                and self.gate.is_open and not self.gate.trading_halted
+                and self.halt.exit_code is None
+                and window_state(self.settings, datetime.fromtimestamp(
+                    self.clock(), ZoneInfo(self.settings.timezone))).active)
+            unrealized = sum((number(row.get('unrealized_pnl', 0))
+                              for row in self.last_position_rows
+                              if row['market'] == self.settings.market), D(0))
+            realized = (sum((pnl-fee+funding for pnl, fee, funding in self.ledger.events.values()),
+                            D(0)) if self.ledger else None)
             summary = {'持仓':str(self.state.positions[self.settings.market]),
+                       '未实现盈亏':str(unrealized),
+                       '窗口已实现盈亏':str(realized) if realized is not None else '未知',
+                       '窗口总盈亏':str(realized+unrealized) if realized is not None else '未知',
+                       '成交数':sum(fill[0] == self.settings.market for fill in self.state.fills.values()),
                        '亏损':str(self.ledger.loss_usd) if self.ledger else '未知',
+                       '当前判据':self.last_decision.eligible if decision_current else None,
                        '判据':self.observed_qualified,'错误数':self.reject_count}
             if (self.settings.mode == 'live' and not self.settings.healthcheck_url
                     and self.settings.healthcheck_waived):
                 summary['外部心跳风险'] = HEALTHCHECK_WAIVER_WARNING
             summary.update(metrics)
+            if not decision_current:
+                summary.update({'竞争量flat': None, '竞争量linear': None})
             await self.alerter.observe(healthy=healthy,waiting=self.waiting,
                 qualified=self.observed_qualified,last_quote=self.last_quote,
                 summary=summary)

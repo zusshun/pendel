@@ -225,7 +225,9 @@ def _build_alerter(settings, dependencies):
             raise
     return Alerter(credentials, http=dependencies.get('http', alert_http),
         monotonic=dependencies.get('monotonic', time.monotonic),
-        healthcheck_url=settings.healthcheck_url)
+        healthcheck_url=settings.healthcheck_url,
+        alert_min_interval_s=settings.alert_min_interval_s,
+        summary_interval_s=settings.summary_interval_s)
 
 
 class MakerSecretFilter(logging.Filter):
@@ -303,6 +305,8 @@ def build_maker(settings, **dependencies):
         options['logger'] = _configure_logger(settings, dependencies, api=api, alerter=alerter)
     elif options.get('logger') is not None:
         _configure_logger(settings, dependencies, api=api, alerter=alerter)
+    if 'alerter' not in dependencies and options.get('logger') is not None:
+        alerter.logger = options['logger']
     maker = dependencies.get('maker_factory', Maker)(settings, api=api, alerter=alerter,
         connect=dependencies.get('connect', connect),
         public_http=dependencies.get('public_http', dependencies.get('http', public_http)),

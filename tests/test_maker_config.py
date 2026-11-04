@@ -34,6 +34,44 @@ class MakerSettingsTests(unittest.TestCase):
         self.assertEqual(settings.window_end_time, '05:00')
         self.assertEqual(settings.timezone, 'Asia/Shanghai')
 
+    def test_notification_intervals_default_to_thirty_minutes_and_four_hours(self):
+        settings = MakerSettings()
+        self.assertEqual(getattr(settings, 'alert_min_interval_s', None), 1800.0)
+        self.assertEqual(getattr(settings, 'summary_interval_s', None), 14400.0)
+
+    def test_notification_intervals_load_defaults_and_overrides_from_toml(self):
+        for content, expected in (
+                ('[maker]\n', (1800.0, 14400.0)),
+                ('[maker]\nalert_min_interval_s = 90.5\nsummary_interval_s = 600.5\n',
+                 (90.5, 600.5))):
+            with self.subTest(content=content), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / 'maker.toml'
+                path.write_text(content)
+                settings = MakerSettings.from_file(path)
+                self.assertEqual(getattr(settings, 'alert_min_interval_s', None), expected[0])
+                self.assertEqual(getattr(settings, 'summary_interval_s', None), expected[1])
+
+    def test_notification_intervals_reject_non_positive_and_non_finite_values(self):
+        for name in ('alert_min_interval_s', 'summary_interval_s'):
+            for value in (0, -1, True, False, float('nan'), float('inf'), float('-inf')):
+                with self.subTest(name=name, value=value), self.assertRaisesRegex(
+                        ValueError, f'{name}.*大于零的有限数字'):
+                    MakerSettings.from_dict({name: value})
+
+    def test_notification_intervals_validate_toml_values(self):
+        for name in ('alert_min_interval_s', 'summary_interval_s'):
+            for value in ('0', '-1', 'true', 'false', 'nan', 'inf', '-inf'):
+                with self.subTest(name=name, value=value), tempfile.TemporaryDirectory() as directory:
+                    path = Path(directory) / 'maker.toml'
+                    path.write_text(f'[maker]\n{name} = {value}\n')
+                    with self.assertRaisesRegex(ValueError, f'{name}.*大于零的有限数字'):
+                        MakerSettings.from_file(path)
+
+    def test_example_includes_notification_interval_defaults(self):
+        settings = MakerSettings.from_file(Path(__file__).parents[1] / 'maker.example.toml')
+        self.assertEqual(getattr(settings, 'alert_min_interval_s', None), 1800.0)
+        self.assertEqual(getattr(settings, 'summary_interval_s', None), 14400.0)
+
     def test_quote_center_defaults_support_normal_wide_spreads(self):
         settings = MakerSettings()
         self.assertEqual(getattr(settings, 'narrow_spread_bps', None), Decimal('20'))

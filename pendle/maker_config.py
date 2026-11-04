@@ -127,6 +127,8 @@ class MakerSettings:
     unknown_timeout_s: float = 60.0
     strategy_interval_s: float = 1.0
     health_log_interval_s: float = 60.0
+    alert_min_interval_s: float = 1800.0
+    summary_interval_s: float = 14400.0
     log_level: str = 'INFO'
     _for_emergency: InitVar[bool] = False
 

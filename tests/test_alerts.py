@@ -82,15 +82,15 @@ class AlerterTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(await alerts.Alerter(
                 alerts.TelegramCredentials('token-value', 'chat-value')).self_test())
 
-    async def test_ordinary_alerts_merge_globally_for_five_minutes(self):
+    async def test_ordinary_alerts_merge_globally_for_thirty_minutes(self):
         self.assertTrue(await self.alerter.alert('守卫甲', key='guard-a'))
         await self._drain_background()
         self.now = 1
         self.assertFalse(await self.alerter.alert('守卫乙', key='guard-b'))
-        self.now = 299
+        self.now = 1799
         self.assertFalse(await self.alerter.alert('守卫丙', key='guard-c'))
         self.assertEqual(len(self.sent), 1)
-        self.now = 300
+        self.now = 1800
         self.assertTrue(await self.alerter.alert('守卫乙更新', key='guard-b'))
         await self._drain_background()
         self.assertEqual(len(self.sent), 2)
@@ -298,10 +298,12 @@ class AlerterTests(unittest.IsolatedAsyncioTestCase):
         await self.alerter.observe(healthy=True, waiting=True, qualified=False, last_quote=None)
         self.assertFalse(any(call[0] == 'POST' for call in self.sent))
         self.now = 1800
-        await self.alerter.observe(healthy=True, waiting=True, qualified=False, last_quote=None)
+        with self.assertLogs('pendle.alerts', logging.INFO) as logs:
+            await self.alerter.observe(healthy=True, waiting=True, qualified=False, last_quote=None)
         await self._drain_background()
         messages = [call[2]['text'] for call in self.sent if call[0] == 'POST']
-        self.assertIn('30 分钟', messages[-1])
+        self.assertEqual(messages, [])
+        self.assertIn('30 分钟', logs.output[0])
 
     async def test_qualification_uses_time_weighting_and_fifty_percent_boundary(self):
         await self.alerter.observe(healthy=True, waiting=True, qualified=False, last_quote=None)
@@ -316,23 +318,25 @@ class AlerterTests(unittest.IsolatedAsyncioTestCase):
         messages = [call[2]['text'] for call in self.sent if call[0] == 'POST']
         self.assertFalse(any('低于 50%' in text for text in messages))
 
-    async def test_hourly_summary_includes_metrics_and_redacts_sensitive_values(self):
-        summary = {'持仓': 3, '盈亏': -2, '有资格时长': 1800,
-                   '判据': '通过', '错误数': 1, '额外': 'token-value chat-value sign=' + 'a' * 64}
+    async def test_periodic_summary_includes_metrics_and_redacts_sensitive_values(self):
+        summary = {'持仓': 3, '未实现盈亏': -2, '判据': '通过',
+                   '外部心跳风险': 'token-value chat-value sign=' + 'a' * 64}
         await self.alerter.observe(healthy=True, waiting=True, qualified=True,
                                    last_quote=None, summary=summary)
-        self.now = 3599
+        self.now = 14399
         await self.alerter.observe(healthy=True, waiting=True, qualified=True,
                                    last_quote=None, summary=summary)
         self.assertFalse(any(call[0] == 'POST' for call in self.sent))
-        self.now = 3600
+        self.now = 14400
         await self.alerter.observe(healthy=True, waiting=True, qualified=True,
                                    last_quote=None, summary=summary)
         await self._drain_background()
         messages = [call[2]['text'] for call in self.sent if call[0] == 'POST']
         self.assertEqual(len(messages), 1)
-        for text in ('每小时摘要', '持仓', '盈亏', '有资格时长', '判据', '错误数'):
+        for text in ('做市摘要', '持仓', '盈亏', '有资格时长', '判据'):
             self.assertIn(text, messages[0])
+        self.assertLessEqual(len(messages[0].splitlines()), 8)
+        self.assertNotIn('{', messages[0])
         for secret in ('token-value', 'chat-value', 'a' * 64):
             self.assertNotIn(secret, messages[0])
 
@@ -341,22 +345,24 @@ class AlerterTests(unittest.IsolatedAsyncioTestCase):
         await self._drain_background()
         self.now = 1
         await self.alerter.alert('告警乙')
-        self.now = 300
+        self.now = 1800
         await self.alerter.observe(healthy=False, waiting=True, qualified=True, last_quote=None)
         await self._drain_background()
         self.assertEqual(len(self.sent), 2)
         self.assertIn('告警乙', self.sent[-1][2]['text'])
 
-    async def test_time_weighted_qualification_ratio_below_fifty_percent_alarms(self):
+    async def test_time_weighted_qualification_ratio_below_fifty_percent_logs_only(self):
         await self.alerter.observe(healthy=True, waiting=True, qualified=False, last_quote=None)
         self.now = 1000
         await self.alerter.observe(healthy=True, waiting=True, qualified=True, last_quote=None)
         self.now = 1800
-        await self.alerter.observe(healthy=True, waiting=True, qualified=True, last_quote=None)
+        with self.assertLogs('pendle.alerts', logging.INFO) as logs:
+            await self.alerter.observe(healthy=True, waiting=True, qualified=True, last_quote=None)
         await self._drain_background()
         self.assertAlmostEqual(self.alerter.qualification_ratio, 800 / 1800)
         messages = [call[2]['text'] for call in self.sent if call[0] == 'POST']
-        self.assertIn('低于 50%', messages[-1])
+        self.assertEqual(messages, [])
+        self.assertIn('低于 50%', logs.output[0])
 
     async def test_failed_ordinary_alert_is_retained_and_attempts_are_rate_limited(self):
         self.reply = HttpResponse(500, {'ok': False})
@@ -367,7 +373,7 @@ class AlerterTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(await self.alerter.alert('守卫乙'))
         self.assertEqual(len(self.sent), 1)
         self.reply = HttpResponse(200, {'ok': True})
-        self.now = 300
+        self.now = 1800
         await self.alerter.observe(healthy=False, waiting=True, qualified=True, last_quote=None)
         await self._drain_background()
         self.assertEqual(len(self.sent), 2)
@@ -379,7 +385,7 @@ class AlerterTests(unittest.IsolatedAsyncioTestCase):
                                         for i in range(20)))
         self.assertEqual(sum(results), 1)
         self.assertEqual(len(self.sent), 1)
-        self.now = 300
+        self.now = 1800
         await self.alerter.observe(healthy=False, waiting=True, qualified=True, last_quote=None)
         await self._drain_background()
         self.assertEqual(len(self.sent), 2)

@@ -8,7 +8,7 @@ data_dir = "data/maker"
 # secret_file = "secrets/maker.json" # Optional; permissions must be 600. Defaults to environment variables.
 # telegram_secret_file = "secrets/maker.json" # Optional; permissions must be 600. Defaults to environment variables.
 healthcheck_url = "" # Live mode requires an external HTTPS heartbeat URL or the explicit waiver below; keep URL access tokens private.
-healthcheck_waived = false # Defaults to false. Set true to allow live mode without an external heartbeat; startup and hourly summaries flag the risk.
+healthcheck_waived = false # Defaults to false. Set true to allow live mode without an external heartbeat; startup and periodic summaries flag the risk.
 # With the waiver, server or network outages produce no alerts; the dead man's switch cancels orders but leaves positions unmanaged.
 quote_notional = "400" # Quote amount per side; hard limit of 800 in code.
 soft_cap_usd = "300"
@@ -87,5 +87,7 @@ unknown_query_interval_s = 3.0
 unknown_timeout_s = 60.0
 strategy_interval_s = 1.0
 health_log_interval_s = 60.0
+alert_min_interval_s = 1800.0 # Minimum seconds between ordinary Telegram batches; urgent alerts remain immediate.
+summary_interval_s = 14400.0 # Seconds between concise Telegram summaries; defaults to four hours.
 log_level = "INFO" # DEBUG logs individual mark prices and public trades.
 # Read tick, baseIncrement, and minimum notional from market metadata; never place orders using fixed example values.

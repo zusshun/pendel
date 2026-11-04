@@ -27,7 +27,7 @@ class OrdinaryAlertQueueTests(unittest.IsolatedAsyncioTestCase):
 
         async def http(method, url, *, json=None, timeout=10):
             self.sent.append(json['text'])
-            if json['text'].startswith(('做市告警', '每小时摘要')):
+            if json['text'].startswith(('做市告警', '做市摘要')):
                 self.started.set()
                 await self.release.wait()
                 self.finished.set()
@@ -60,7 +60,7 @@ class OrdinaryAlertQueueTests(unittest.IsolatedAsyncioTestCase):
             self.release.set()
             await self.finished.wait()
             await asyncio.sleep(0)
-            self.now = 300
+            self.now = 1800
             await self.alerter.alert('新守卫', key='guard')
             await asyncio.sleep(0)
             self.assertEqual(len(self.sent), 2)
@@ -98,17 +98,17 @@ class OrdinaryAlertQueueTests(unittest.IsolatedAsyncioTestCase):
             await caller
             await self.finished.wait()
 
-    async def test_observe_hourly_summary_returns_before_http_finishes(self):
+    async def test_observe_periodic_summary_returns_before_http_finishes(self):
         await self.alerter.observe(healthy=False, waiting=True, qualified=True,
                                   last_quote=None)
-        self.now = 3600
+        self.now = 14400
         caller = asyncio.create_task(self.alerter.observe(
             healthy=False, waiting=True, qualified=True, last_quote=None,
             summary={'持仓': 3}))
         try:
             await self.started.wait()
-            self.assertTrue(caller.done(), '周期观察等待了小时摘要 HTTP')
-            self.assertIn('每小时摘要', self.sent[-1])
+            self.assertTrue(caller.done(), '周期观察等待了摘要 HTTP')
+            self.assertIn('做市摘要', self.sent[-1])
             self.assertIn('持仓', self.sent[-1])
         finally:
             self.release.set()
@@ -139,7 +139,7 @@ class OrdinaryAlertQueueTests(unittest.IsolatedAsyncioTestCase):
                 self.release.set()
                 await first_finished.wait()
                 await asyncio.sleep(0)
-            self.now = 300
+            self.now = 1800
             await self.alerter.alert('第二守卫', key='guard')
             await asyncio.sleep(0)
             self.assertEqual(len(self.sent), 2)
