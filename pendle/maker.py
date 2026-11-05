@@ -330,6 +330,8 @@ class QuoteEngine:
             adding = position == 0 or (position > 0) == (side == 'buy')
             soft = abs(pos_usd) >= cfg.soft_cap_usd
             soft_edge = adding and soft and source == 'third_party_mid'
+            if not adding and cfg.exit_reduce_offset_bps is not None:
+                offset = cfg.exit_reduce_offset_bps
             if soft_edge:
                 offset = cfg.band_bps-cfg.band_margin_bps
             price = center*(1 + (-offset if side == 'buy' else offset)/BPS)
@@ -439,6 +441,12 @@ class Maker:
         self.gate_wait_until,self.last_gate_status=0,None
         self.passive_reduce_unavailable=False
         self.inventory_reducing = False
+        self.position_started_at = None
+        self._position_sign = 0
+        self._position_entry_pending = False
+        self.position_exit_reason = None
+        self.exit_retry_at = 0
+        self.exit_failure_alerted = False
         self._shutdown = False
         self._stop_failed = False
         self._heartbeat_ready = False
@@ -723,6 +731,7 @@ class Maker:
                 return False
             self.last_position_rows = [self.state.position_details[cfg.market]] if hasattr(
                 self.state,'position_details') and cfg.market in self.state.position_details else []
+            self.track_position(reconciled=ok)
             self.watchdog.beat('Reconciler')
             if ok:
                 self.last_reconcile_at=self.monotonic()
@@ -748,6 +757,7 @@ class Maker:
         fields.update({key:fill.get(key,0 if key != 'client_order_id' else None)
                        for key in ('client_order_id','realized_pnl','fee')})
         self.state.apply_fill(**fields)
+        self.track_position()
         self.last_fill_ms = max(self.last_fill_ms, fill['time_ms'])
         occurred = datetime.fromtimestamp(fill['time_ms']/1000, ZoneInfo('UTC'))
         window = window_state(self.settings, occurred)
@@ -762,6 +772,7 @@ class Maker:
 
     async def _tick(self):
         cfg, now = self.settings, self.monotonic()
+        self.track_position()
         # Settle the previous source interval first; early returns such as missing data must not reuse the old center price.
         self.accrue_quote_time()
         self.observed_center_source = None
@@ -818,6 +829,8 @@ class Maker:
                     or now-self.last_residual_alert>=900):
                 await self.alerter.alert('窗口结束仍有持仓，继续监控',key='窗口残余持仓',urgent=True)
                 self.last_residual_alert=now
+            return
+        if await self.check_position_exit():
             return
         active_orders = self.state.active_orders(cfg.market)
         if self.book is None or self.book_seen is None:
@@ -978,39 +991,98 @@ class Maker:
         self.last_requote = self.last_quote
         self.qualified = not reducing
 
-    async def flatten(self, center):
+    def track_position(self, *, reconciled=False):
+        """Track episodes from the reconciled local position using monotonic time."""
+        position = self.state.positions[self.settings.market]
+        sign = 1 if position > 0 else -1 if position < 0 else 0
+        if sign != self._position_sign:
+            self.position_started_at = self.monotonic() if sign else None
+            self.position_exit_reason = None
+            self.exit_retry_at = 0
+            self.exit_failure_alerted = False
+            self._position_sign = sign
+            self._position_entry_pending = True
+        if reconciled:
+            self._position_entry_pending = False
+
+    async def check_position_exit(self):
+        """Latch an exit until flat; cleanup waits and incomplete fills have separate retries."""
+        cfg, now = self.settings, self.monotonic()
+        position = self.state.positions[cfg.market]
+        if not position or (cfg.max_hold_s is None and cfg.stop_loss_bps is None):
+            return False
+        reason = self.position_exit_reason
+        if (reason is None and cfg.stop_loss_bps is not None and not self._position_entry_pending
+                and self.engine.mark_is_fresh(now)):
+            entry = self.state.position_details.get(cfg.market, {}).get('averageEntryPrice')
+            if entry is not None:
+                entry = number(entry)
+                if entry > 0 and (entry-self.engine.mark[0])*(1 if position > 0 else -1)*BPS >= entry*cfg.stop_loss_bps:
+                    reason = '止损离场'
+        if (reason is None and cfg.max_hold_s is not None and self.position_started_at is not None
+                and now-self.position_started_at >= cfg.max_hold_s):
+            reason = '持仓超时离场'
+        if reason is None:
+            return False
+        if cfg.mode == 'dry-run':
+            self.log({'事件': '拟持仓离场', '原因': reason, '持仓': str(position)})
+            return True
+        if self.position_exit_reason is None:
+            self.position_exit_reason = reason
+            self.record_quote_state(False, reason, event=True)
+            self.pause_seconds[reason] += 0
+        self.waiting, self.qualified = True, False
+        if now < self.exit_retry_at:
+            return True
+        center = self.reduction_center()
+        if center is None:
+            if not await self.stop_orders('持仓离场等待新鲜中心价，先撤销挂单'):
+                await self.trip_halt('持仓离场撤单无法确认')
+            return True
+        result = await self.flatten(center, target=D(0))
+        if result is False and self.halt.exit_code is None and not self.gate.trading_halted:
+            self.exit_retry_at = self.monotonic()+30
+            if not self.exit_failure_alerted:
+                self.exit_failure_alerted = True
+                await self.alerter.alert(reason+' IOC 未完全成交，30 秒后重试', key='持仓离场未完全成交')
+        return True
+
+    async def flatten(self, center, *, target=None):
         try:
             async with asyncio.timeout(self.settings.flatten_timeout_s):
-                return await self._flatten(center)
+                return await self._flatten(center, target=target)
         except TimeoutError:
-            await self.trip_halt('硬上限减仓超过总时限')
+            await self.trip_halt('持仓离场超过总时限' if target == 0 else '硬上限减仓超过总时限')
             return False
 
-    async def _flatten(self, center):
+    async def _flatten(self, center, *, target=None):
         cfg = self.settings
         if cfg.mode == 'dry-run':
             return False
+        exiting = target == 0
         deadline = self.monotonic()+cfg.flatten_timeout_s
-        if not await self.stop_orders('达到硬上限，先撤单再 IOC 减仓'):
-            await self.trip_halt('硬上限撤单无法确认')
+        if not await self.stop_orders('持仓离场，先撤单再 IOC 平仓' if exiting else '达到硬上限，先撤单再 IOC 减仓'):
+            await self.trip_halt('持仓离场撤单无法确认' if exiting else '硬上限撤单无法确认')
             return False
         if not self.manager.prepare_resume():
+            if exiting:
+                return None
             await self.trip_halt('硬上限撤单无法确认')
             return False
         if not await self.reconcile_once():
-            await self.trip_halt('硬上限减仓前对账失败')
+            await self.trip_halt('持仓离场前对账失败' if exiting else '硬上限减仓前对账失败')
             return False
-        for _ in range(cfg.flatten_attempts):
+        for _ in range(1 if exiting else cfg.flatten_attempts):
             if self.monotonic() >= deadline or not self.gate.is_open:
                 break
             center = self.reduction_center()
             if center is None:
-                await self.trip_halt('硬上限减仓缺少新鲜中心价，停止 IOC 尝试')
+                await self.trip_halt('持仓离场缺少新鲜中心价，停止 IOC 尝试' if exiting else '硬上限减仓缺少新鲜中心价，停止 IOC 尝试')
                 return False
             position = self.state.positions[cfg.market]
-            if abs(position)*center < cfg.soft_cap_usd:
+            if (position == 0 if exiting else abs(position)*center < cfg.soft_cap_usd):
                 return True
-            quantity = abs(position)-(cfg.soft_cap_usd/center-self.rules.increment)
+            quantity = abs(position) if exiting else abs(position)-(cfg.soft_cap_usd/center-self.rules.increment)
             quantity = min(abs(position),(quantity/self.rules.increment).to_integral_value(
                 rounding=ROUND_CEILING)*self.rules.increment)
             side = 'sell' if position > 0 else 'buy'
@@ -1023,11 +1095,20 @@ class Maker:
             if order.status == OrderStatus.UNKNOWN:
                 await self.manager.resolve_unknown(order)
             if not order.terminal:
+                if exiting:
+                    await self.trip_halt('持仓离场 IOC 状态无法确认')
+                    return False
                 break
             if not await self.reconcile_once():
+                if exiting:
+                    await self.trip_halt('持仓离场后对账失败')
+                    return False
                 break
-        if abs(self.state.positions[cfg.market])*center < cfg.soft_cap_usd:
+        if (self.state.positions[cfg.market] == 0 if exiting
+                else abs(self.state.positions[cfg.market])*center < cfg.soft_cap_usd):
             return True
+        if exiting:
+            return False
         await self.trip_halt('IOC 减仓预算耗尽或仍未降至软上限以下')
         return False
 
@@ -1136,6 +1217,8 @@ class Maker:
             reason = '全局发送封锁'
         elif self.halt.exit_code is not None:
             reason = self.halt_result.reason if self.halt_result else '全局熔断'
+        elif self.position_exit_reason is not None:
+            reason = self.position_exit_reason
         elif self.guard.state != 'RUNNING':
             reason = self.guard.reason or '守卫恢复等待'
         elif self.state.stopping:
@@ -1158,7 +1241,11 @@ class Maker:
             reason = self.last_stop_reason or '判据或窗口等待'
         else:
             reason = '等待同步或合规报价'
-        self.record_quote_state(False, reason)
+        if self.position_exit_reason is not None and reason == self.position_exit_reason:
+            self.accrue_quote_time()
+            self.observed_qualified, self.observed_reason = False, reason
+        else:
+            self.record_quote_state(False, reason)
 
     def competition_metrics(self):
         decision = self.last_decision
@@ -1681,6 +1768,7 @@ class Maker:
                                            'direction': 'neutral', 'netQuantity': '0'})
             if self.state.note_position_event(self.settings.market, position):
                 self.state.positions[self.settings.market] = D(0)
+                self.track_position()
                 self.state.begin_sync(self.settings.market, '私有空持仓快照等待 quiet 对账')
                 self.reconcile_event.set()
             return

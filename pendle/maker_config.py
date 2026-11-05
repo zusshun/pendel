@@ -120,6 +120,9 @@ class MakerSettings:
     window_end_time: str = '05:00'
     timezone: str = 'Asia/Shanghai'
     max_flatten_slippage_bps: Decimal = Decimal('60')
+    max_hold_s: float | None = None
+    stop_loss_bps: Decimal | None = None
+    exit_reduce_offset_bps: Decimal | None = None
     flatten_attempts: int = 3
     flatten_timeout_s: float = 60.0
     unknown_query_attempts: int = 3
@@ -155,6 +158,15 @@ class MakerSettings:
                 raise ValueError(f'{setting.name} 必须是整数')
             elif type(setting.default) is bool and type(value) is not bool:
                 raise ValueError(f'{setting.name} 必须是布尔值')
+        for name in ('max_hold_s', 'stop_loss_bps', 'exit_reduce_offset_bps'):
+            value = getattr(self, name)
+            if value is not None:
+                object.__setattr__(self, name, _number(value, name, decimal=name != 'max_hold_s'))
+        if self.stop_loss_bps is not None and self.stop_loss_bps >= self.band_bps * 4:
+            raise ValueError('stop_loss_bps 必须小于 band_bps 的四倍')
+        if (self.exit_reduce_offset_bps is not None and not self.min_offset_bps
+                <= self.exit_reduce_offset_bps <= self.band_bps - self.band_margin_bps):
+            raise ValueError('exit_reduce_offset_bps 必须在 min_offset_bps 与安全价格带之间')
         if self.mode not in ('dry-run', 'sandbox', 'live'):
             raise ValueError('mode 必须是 dry-run、sandbox 或 live')
         if (not isinstance(self.log_level, str)

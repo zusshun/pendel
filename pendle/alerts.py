@@ -182,6 +182,8 @@ class Alerter:
         return {'qualified': metrics.get('有资格时长秒'),
                 'elapsed': metrics.get('观测时长秒'),
                 'fills': metrics.get('成交数', 0),
+                'exits': {reason: metrics.get('守卫及停报原因', {}).get(reason, {}).get('次数', 0)
+                          for reason in ('持仓超时离场', '止损离场')},
                 'pauses': {reason: row.get('时长秒', 0)
                            for reason, row in metrics.get('守卫及停报原因', {}).items()}}
 
@@ -206,6 +208,9 @@ class Alerter:
 
         stops = '；'.join(f'{text(reason)} {seconds:.0f}秒' for reason, seconds in pauses) or '无'
         fills = max(0, snapshot['fills'] - baseline['fills'])
+        exits = '；'.join(f'{reason}：{max(0, count-baseline["exits"].get(reason, 0))}次'
+                         for reason, count in snapshot['exits'].items()
+                         if count > baseline['exits'].get(reason, 0))
         weight = metrics.get('竞争量权重', 'flat')
         competition = metrics.get('竞争量' + weight)
         gate = metrics.get('当前判据', metrics.get('判据'))
@@ -218,7 +223,7 @@ class Alerter:
                  f'本期有资格时长占比：{ratio}；判据变化：{self._summary_counts["判据变化"]}次；'
                  f'低资格观测：{self._summary_counts["low-qualification"]}次',
                  '停报前三：' + stops,
-                 f'本期成交：{fills}笔',
+                 f'本期成交：{fills}笔' + ('；' + exits if exits else ''),
                  f'竞争量（{text(weight)}）：{text(competition)} 美元；当前判据：{gate_text}']
         if metrics.get('外部心跳风险'):
             lines.append(text(metrics['外部心跳风险']))

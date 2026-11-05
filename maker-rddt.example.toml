@@ -100,3 +100,8 @@ alert_min_interval_s = 1800.0 # Minimum seconds between ordinary Telegram batche
 summary_interval_s = 14400.0 # Seconds between concise Telegram summaries; defaults to four hours.
 log_level = "INFO" # DEBUG logs individual mark prices and public trades.
 # Read tick, baseIncrement, and minimum notional from market metadata; never place orders using fixed example values.
+
+# Optional position exits (disabled when omitted).
+# max_hold_s = 600
+# stop_loss_bps = 30
+# exit_reduce_offset_bps = 10 # Keep a margin above min_offset_bps (8) to avoid cancel churn when the center drifts.
