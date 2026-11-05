@@ -1,5 +1,5 @@
 [Unit]
-Description=Ondo 单市场实盘做市机器人
+Description=Ondo 单市场实盘做市机器人（RDDT）
 Wants=network-online.target
 After=network-online.target
 StartLimitIntervalSec=600
@@ -10,7 +10,7 @@ Type=simple
 User=ubuntu
 Group=ubuntu
 WorkingDirectory=/home/ubuntu/pendle
-EnvironmentFile=/home/ubuntu/pendle/secrets/maker.env
+EnvironmentFile=/home/ubuntu/pendle/secrets/maker-rddt.env
 Environment=PYTHONUNBUFFERED=1
 ExecStart=/home/ubuntu/pendle/.venv/bin/python -m pendle maker --config /home/ubuntu/pendle/maker-rddt.toml --live
 Restart=on-failure
