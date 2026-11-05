@@ -459,12 +459,98 @@ class OrdersTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_guard_resume_requires_confirmed_stop_then_new_reconciliation(self):
         self.assertTrue(await self.manager.stop('守卫'))
-        self.manager.prepare_resume()
+        self.assertIs(self.manager.prepare_resume(), True)
         self.assertEqual(self.state.market_mode('IBM-USD.P'), 'SYNCING')
         with self.assertRaises(OrdersBlocked):
             self.intent()
         self.assertTrue(await self.manager.reconcile('IBM-USD.P'))
         self.assertIsNotNone(self.intent())
+
+    async def test_prepare_resume_waits_for_inflight_stop_without_changing_barrier(self):
+        self.state.stopping = True
+        self.state.modes['IBM-USD.P'] = 'STOPPING'
+        stopping = asyncio.get_running_loop().create_future()
+        self.manager._stop_task = stopping
+        try:
+            self.assertIs(self.manager.prepare_resume(), False)
+            self.assertTrue(self.state.stopping)
+            self.assertIs(self.manager._stop_task, stopping)
+            self.assertFalse(stopping.done())
+            self.assertEqual(self.state.market_mode('IBM-USD.P'), 'STOPPING')
+            with self.assertRaises(OrdersBlocked):
+                self.intent()
+            self.assertEqual(self.api.calls, [])
+        finally:
+            stopping.cancel()
+
+    async def test_prepare_resume_waits_for_pending_and_inflight_writes(self):
+        for blocker in ('pending', 'inflight'):
+            with self.subTest(blocker=blocker):
+                self.assertTrue(await self.manager.stop('写入等待'))
+                stopping = self.manager._stop_task
+                writing = asyncio.get_running_loop().create_future()
+                self.manager.pending = {'pending-write': writing} if blocker == 'pending' else {}
+                self.api.in_flight_writes = int(blocker == 'inflight')
+                try:
+                    self.assertIs(self.manager.prepare_resume(), False)
+                    self.assertTrue(self.state.stopping)
+                    self.assertIs(self.manager._stop_task, stopping)
+                    self.assertEqual(self.state.market_mode('IBM-USD.P'), 'STOPPING')
+                finally:
+                    writing.cancel()
+                    self.manager.pending.clear()
+                    self.api.in_flight_writes = 0
+
+    async def test_prepare_resume_keeps_hard_failures_ahead_of_transient_waits(self):
+        from pendle.ondo_api import SendGate
+        for blocker in ('false', 'exception', 'cancelled', 'missing_stop',
+                        'closed_gate', 'trading_halted', 'active_order', 'missing_ack'):
+            with self.subTest(blocker=blocker):
+                self.state.stopping = False
+                self.state.deadman_acked = True
+                self.state.modes['IBM-USD.P'] = 'RUNNING'
+                self.state.orders.clear()
+                self.api.gate = SendGate()
+                if blocker == 'active_order':
+                    self.intent()
+                self.state.stopping = True
+                self.state.modes['IBM-USD.P'] = 'STOPPING'
+                stopping = asyncio.get_running_loop().create_future()
+                self.manager._stop_task = stopping
+                if blocker == 'false':
+                    stopping.set_result(False)
+                elif blocker == 'exception':
+                    stopping.set_exception(RuntimeError('停止失败'))
+                elif blocker == 'cancelled':
+                    stopping.cancel()
+                elif blocker == 'missing_stop':
+                    self.manager._stop_task = None
+                elif blocker == 'closed_gate':
+                    self.api.gate.close()
+                elif blocker == 'trading_halted':
+                    self.api.gate.halt_trading()
+                elif blocker == 'missing_ack':
+                    self.state.deadman_acked = False
+                writing = asyncio.get_running_loop().create_future()
+                self.manager.pending = {'pending-write': writing}
+                try:
+                    if blocker == 'active_order':
+                        # Orders may still be cancelling while cleanup is in flight: wait, then fail once settled.
+                        self.assertFalse(self.manager.prepare_resume())
+                        self.assertTrue(self.state.stopping)
+                        writing.cancel()
+                        self.manager.pending.clear()
+                        stopping.set_result(True)
+                    with self.assertRaises(OrdersBlocked):
+                        self.manager.prepare_resume()
+                    self.assertTrue(self.state.stopping)
+                finally:
+                    writing.cancel()
+                    self.manager.pending.clear()
+                    if not stopping.done():
+                        stopping.cancel()
+                    elif not stopping.cancelled():
+                        stopping.exception()
 
     async def test_failed_stop_cannot_be_resumed(self):
         self.api.open_rows = [row('other')]

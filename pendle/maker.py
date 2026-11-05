@@ -853,7 +853,8 @@ class Maker:
             if cfg.mode == 'dry-run':
                 self.state.stopping = False
             else:
-                self.manager.prepare_resume()
+                if not self.manager.prepare_resume():
+                    return
                 if not await self.reconcile_once():
                     return
         self.waiting = False
@@ -901,8 +902,8 @@ class Maker:
             if await self.stop_orders('合规挂单偏离理论价超过重报阈值，按市场撤销双边'):
                 self.last_requote = self.monotonic()
                 if self.state.deadman_acked and self.gate.is_open and not self.gate.trading_halted:
-                    self.manager.prepare_resume()
-                    await self.reconcile_once()
+                    if self.manager.prepare_resume():
+                        await self.reconcile_once()
             return
         for q in quotes:
             order = self.manager.create_intent(cfg.market,q.side,q.quantity,q.price,reduce_only=q.reduce_only)
@@ -946,7 +947,9 @@ class Maker:
         if not await self.stop_orders('达到硬上限，先撤单再 IOC 减仓'):
             await self.trip_halt('硬上限撤单无法确认')
             return False
-        self.manager.prepare_resume()
+        if not self.manager.prepare_resume():
+            await self.trip_halt('硬上限撤单无法确认')
+            return False
         if not await self.reconcile_once():
             await self.trip_halt('硬上限减仓前对账失败')
             return False

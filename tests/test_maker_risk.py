@@ -381,6 +381,21 @@ class GuardTests(unittest.IsolatedAsyncioTestCase):
         self.clock.now = 28
         self.assertTrue(await self.guard.observe(True))
 
+    async def test_guard_resume_wait_stays_stabilizing_until_retry_succeeds(self):
+        results = iter((False, True))
+        self.guard.resume = lambda: next(results)
+        await self.guard.trigger('守卫停止')
+        self.clock.now = 10
+        self.assertFalse(await self.guard.observe(True))
+        stable_since = self.guard.stable_since
+        self.clock.now = 15
+        self.assertFalse(await self.guard.observe(True))
+        self.assertEqual(self.guard.state, 'STABILIZING')
+        self.assertEqual(self.guard.stable_since, stable_since)
+        self.clock.now = 16
+        self.assertTrue(await self.guard.observe(True))
+        self.assertEqual(self.guard.state, 'RUNNING')
+
     async def test_failed_stop_cannot_allow_guard_recovery(self):
         async def fail(reason):
             return False

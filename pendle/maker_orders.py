@@ -1042,18 +1042,24 @@ class OrderManager:
                 await self.confirm_cancel(order)
 
     def prepare_resume(self):
-        """Called after guard stabilization; remove only the stop barrier, then require reconciliation again."""
+        """Return False while cleanup is in flight; resume only into a new reconciliation barrier."""
         gate = getattr(self.api, 'gate', None)
-        if (self._stop_task is None or not self._stop_task.done() or self._stop_task.cancelled()
-                or self._stop_task.exception() is not None or self._stop_task.result() is not True
-                or any(not task.done() for task in self.pending.values())
-                or getattr(self.api, 'in_flight_writes', 0) or self.state.active_orders()
+        if (self._stop_task is None
+                or self._stop_task.done() and (self._stop_task.cancelled()
+                    or self._stop_task.exception() is not None or self._stop_task.result() is not True)
                 or not self._local_stop_confirmed and not self.state.deadman_acked
                 or (gate is not None and (
                     not gate.is_open or getattr(gate, 'trading_halted', False)))):
+            raise OrdersBlocked('停止尚未确认或闸门已关闭，禁止恢复')
+        # Orders may still be cancelling while a sweep is in flight; check them only once it settles.
+        if (not self._stop_task.done() or any(not task.done() for task in self.pending.values())
+                or getattr(self.api, 'in_flight_writes', 0)):
+            return False
+        if self.state.active_orders():
             raise OrdersBlocked('停止尚未确认或闸门已关闭，禁止恢复')
         self.state.stopping = False
         self._stop_task = None
         self._local_stop_confirmed = False
         for market in self.state.markets:
             self.state.begin_sync(market, '守卫恢复前重新对账')
+        return True

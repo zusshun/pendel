@@ -465,7 +465,8 @@ class Guard:
             self.stable_since, self.state = now, 'STABILIZING'
         if now - self.stable_since < self.stable_s:
             return False
-        self.resume()
+        if self.resume() is False:
+            return False
         self.state = 'RUNNING'
         return True
 
