@@ -66,6 +66,7 @@ class Alerter:
         self._previous_qualified = False
         self._qualification = deque()
         self.qualification_ratio = None
+        self._last_low_qualification_log = None
         self._last_summary = None
         self._summary_counts = Counter()
         self._summary_baseline = None
@@ -118,8 +119,14 @@ class Alerter:
             done, _ = await asyncio.wait((task,), timeout=10)
             return task.result() if done else False
         if key in ('判据变化', 'low-qualification'):
-            self.logger.info(self._redact(reason))
             self._summary_counts[key] += 1
+            if key == 'low-qualification':
+                now = self._monotonic()
+                if (self._last_low_qualification_log is not None
+                        and now - self._last_low_qualification_log < 600):
+                    return False
+                self._last_low_qualification_log = now
+            self.logger.info(self._redact(reason))
             return False
         self._pending[str(key if key is not None else reason)] = str(reason)
         return self._schedule_alerts()

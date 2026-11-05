@@ -247,6 +247,15 @@ class MakerE2E(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(self.bot.halt.exit_code)
 
     async def test_window_last_hour_only_reduces(self):
+        self.assertFalse(self.bot.settings.reduce_only_gtc_verified)
+        await self.assert_window_last_hour_only_reduces(reduce_only=False)
+
+    async def test_window_last_hour_only_reduces_with_verified_reduce_only_gtc(self):
+        self.bot.settings = replace(self.settings,reduce_only_gtc_verified=True)
+        self.bot.engine.settings = self.bot.settings
+        await self.assert_window_last_hour_only_reduces(reduce_only=True)
+
+    async def assert_window_last_hour_only_reduces(self, *, reduce_only):
         self.clock.epoch = datetime(2026,11,9,4,15,tzinfo=ZoneInfo('Asia/Shanghai')).timestamp()
         self.bot.state.positions[MARKET] = self.exchange.position = D(1)
         self.refresh()
@@ -254,8 +263,34 @@ class MakerE2E(unittest.IsolatedAsyncioTestCase):
         places = [c[1] for c in self.exchange.calls if c[0]=='place']
         self.assertEqual(len(places),1)
         self.assertEqual(places[0]['side'],'sell')
-        self.assertTrue(places[0]['reduceOnly'])
-        self.assertLessEqual(D(places[0]['size']),1)
+        self.assertTrue(places[0]['postOnly'])
+        self.assertEqual(places[0]['timeInForce'],'GTC')
+        self.assertEqual(places[0]['reduceOnly'],reduce_only)
+        self.assertLessEqual(D(places[0]['size']),abs(self.exchange.position))
+        active = self.bot.state.active_orders(MARKET)
+        self.assertEqual(len(active),1)
+        self.assertEqual(active[0].side,'sell')
+        self.assertTrue(active[0].post_only)
+        self.assertEqual(active[0].time_in_force,'GTC')
+        self.assertEqual(active[0].reduce_only,reduce_only)
+        self.assertLessEqual(active[0].remaining,abs(self.exchange.position))
+        self.assertFalse(self.bot.qualified)
+        self.assertIsNone(self.bot.halt.exit_code)
+
+    async def test_last_hour_plain_post_only_must_reduce_and_fit_position(self):
+        from pendle.maker_orders import OrdersBlocked
+        self.clock.epoch = datetime(2026,11,9,4,15,tzinfo=ZoneInfo('Asia/Shanghai')).timestamp()
+        self.bot.state.positions[MARKET] = self.exchange.position = D(1)
+        self.refresh()
+        now = self.bot.monotonic()
+        for side, quantity in (('buy', D('.5')), ('sell', D('1.5'))):
+            with self.subTest(side=side, quantity=quantity):
+                order = self.bot.manager.create_intent(MARKET, side, quantity, D(100), reduce_only=False)
+                try:
+                    with self.assertRaisesRegex(OrdersBlocked, '窗口最后一小时禁止发送非 reduceOnly 挂单'):
+                        self.bot.validate_resting_or_pending(order, self.bot.state, now=now)
+                finally:
+                    self.bot.state.orders.pop(order.client_order_id, None)
 
     async def test_invalid_tick_never_places_single_side(self):
         self.bot.rules = MarketRules(D('1'),D('.001'))

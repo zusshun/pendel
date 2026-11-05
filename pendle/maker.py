@@ -28,6 +28,7 @@ D = Decimal
 BPS = D(10000)
 HEALTHCHECK_WAIVER_WARNING = ('未配置外部心跳：服务器或网络整体故障时不会收到告警；'
                             '死人开关会撤销挂单，但已有持仓无人处理')
+INVENTORY_REDUCE_REASON = '库存达到上限，仅挂 reduceOnly 减仓单'
 
 
 @dataclass(frozen=True)
@@ -74,6 +75,7 @@ class Decision:
     competition_flat: Decimal | None = None
     competition_linear: Decimal | None = None
     center_source: str | None = None
+    inventory_reducing: bool = False
 
 
 @dataclass(frozen=True)
@@ -316,8 +318,11 @@ class QuoteEngine:
         skew = (D(0) if source == 'mark' else
                 max(D(-1), min(D(1), pos_usd/cfg.soft_cap_usd))*cfg.skew_bps)
         quotes = []
+        inventory_reducing = False
+        # This instance quotes one market, so its quote budget also respects tighter local exposure caps.
         risk = RiskManager(RiskLimits(quote_notional=cfg.quote_notional,
-            hard_cap_usd=cfg.hard_cap_usd, max_position_usd=cfg.max_position_usd,
+            hard_cap_usd=min(cfg.hard_cap_usd, cfg.max_position_usd, cfg.max_account_exposure_usd),
+            max_position_usd=cfg.max_position_usd,
             max_account_exposure_usd=cfg.max_account_exposure_usd, max_margin_ratio=cfg.max_margin_ratio))
         existing = ({order.side: order for order in state.active_orders(cfg.market)}
                     if existing_prices else {})
@@ -334,30 +339,34 @@ class QuoteEngine:
             price = (price/rules.tick).to_integral_value(rounding=rounding)*rules.tick
             amount = cfg.quote_notional*(D('.5') if adding and soft else 1)
             quantity = (amount/price/rules.increment).to_integral_value(rounding=ROUND_FLOOR)*rules.increment
+            old = existing.get(side)
+            # Recheck local capacity even when retaining orders, excluding the retained order itself.
+            limited = risk.limit_adding_quantity(cfg.market, side, quantity, rules.increment,
+                [MarketRisk(cfg.market, position, max(center, self.mark[0]) if fresh_mark else center)],
+                risk_orders(state, exclude=old), price=price)
+            local_cap_blocked = (position != 0 and adding and limited < quantity
+                                 and (limited <= 0 or limited*price < rules.min_notional))
             # Fixed-order and existing two-sided checks reserve no hypothetical same-side order; actual sends still check all active orders.
             if not guard_only:
-                quantity = risk.limit_adding_quantity(cfg.market, side, quantity, rules.increment,
-                    [MarketRisk(cfg.market, position, max(center, self.mark[0]) if fresh_mark else center)],
-                    risk_orders(state), price=price)
+                quantity = limited
             if not adding and soft:
                 quantity = min(quantity, (abs(position)/rules.increment).to_integral_value(
                     rounding=ROUND_FLOOR)*rules.increment)
             # Check the current price when retaining valid orders; theoretical quotes still set requote thresholds, and sends validate new prices by default.
-            old = existing.get(side)
             capacity = base_position_capacity(rules, state, cfg.market, side, exclude=old)
             # Fixed orders in guard_only are checked separately at send time; do not reserve another hypothetical same-side order.
             if capacity is not None and (not guard_only or existing_prices):
-                quantity = min(quantity, (capacity/rules.increment).to_integral_value(
-                    rounding=ROUND_FLOOR)*rules.increment)
+                base_quantity = (capacity/rules.increment).to_integral_value(
+                    rounding=ROUND_FLOOR)*rules.increment
+                quantity = min(quantity, base_quantity)
                 checked_base = old.remaining if old is not None else quantity
-                if checked_base <= 0 or checked_base > capacity:
+                if base_quantity <= 0 or checked_base > capacity:
                     return Decision(False, '交易所最大基础持仓量限制，双侧停止报价',
                                     center, **competition_values)
             checked_price = old.price if old is not None else price
             checked_quantity = old.remaining if old is not None else quantity
             distance = abs(checked_price/center-1)*BPS
             if (not cfg.min_offset_bps <= distance <= cfg.band_bps-cfg.band_margin_bps
-                    or checked_quantity <= 0 or old is None and quantity*price < rules.min_notional
                     or opposite and (checked_price >= opposite[0][0] if side == 'buy'
                                      else checked_price <= opposite[0][0])):
                 return Decision(False, '取整后任一侧不合规', center, **competition_values)
@@ -366,8 +375,14 @@ class QuoteEngine:
                 if (not self.mark_is_fresh(now) or
                         not cfg.min_offset_bps <= abs(checked_price/mark-1)*BPS <= cfg.band_bps-cfg.band_margin_bps):
                     return Decision(False, '标记价格辅助守卫', center, **competition_values)
+            if local_cap_blocked:
+                inventory_reducing = True
+            elif checked_quantity <= 0 or old is None and quantity*price < rules.min_notional:
+                return Decision(False, '取整后任一侧不合规', center, **competition_values)
             quotes.append(Quote(side, price, quantity, soft and not adding and cfg.reduce_only_gtc_verified))
-        return Decision(True, '判据通过', center, tuple(quotes), **competition_values)
+        return Decision(True, INVENTORY_REDUCE_REASON if inventory_reducing else '判据通过',
+                        center, tuple(quotes), inventory_reducing=inventory_reducing,
+                        **competition_values)
 
 
 class Maker:
@@ -423,6 +438,7 @@ class Maker:
         self.reject_count, self.backoff_until = 0, 0
         self.gate_wait_until,self.last_gate_status=0,None
         self.passive_reduce_unavailable=False
+        self.inventory_reducing = False
         self._shutdown = False
         self._stop_failed = False
         self._heartbeat_ready = False
@@ -582,7 +598,11 @@ class Maker:
             if not window.active:
                 raise OrdersBlocked('固定挂单排队期间已越过交易窗口')
             if window.reducing and not order.reduce_only:
-                raise OrdersBlocked('窗口最后一小时禁止发送非 reduceOnly 挂单')
+                # Ondo only accepts reduceOnly with IOC, so passive reduction uses plain post-only orders
+                # that sit on the reducing side and never exceed the current position.
+                held = state.positions[cfg.market]
+                if not held or (held > 0) != (order.side == 'sell') or remaining > abs(held):
+                    raise OrdersBlocked('窗口最后一小时禁止发送非 reduceOnly 挂单')
             snapshot=copy(state)
             # Published orders still count in order book subtraction; exclude unpublished intents only from the order book snapshot.
             snapshot.orders={cid:existing for cid,existing in state.orders.items()
@@ -746,6 +766,7 @@ class Maker:
         self.accrue_quote_time()
         self.observed_center_source = None
         self.market_data_wait_reason = None
+        self.inventory_reducing = False
         self.watchdog.beat('Strategy')
         if self.stop_event.is_set():
             return
@@ -829,6 +850,10 @@ class Maker:
             guard_only=bool(self.state.active_orders(cfg.market)),
             existing_prices=bool(self.state.active_orders(cfg.market)))
         self.last_decision, self.decision_seen = decision, now
+        self.inventory_reducing = decision.inventory_reducing
+        reducing = window.reducing or self.inventory_reducing
+        if reducing:
+            self.qualified = False
         self.observed_center_source = decision.center_source
         flatten_center=self.reduction_center()
         if (cfg.mode != 'dry-run' and flatten_center is not None
@@ -877,21 +902,26 @@ class Maker:
         self.waiting = False
         quotes = decision.quotes
         position = self.state.positions[cfg.market]
-        if window.reducing:
+        if reducing:
             if self.passive_reduce_unavailable:
                 self.waiting=True
-                await self.stop_orders('窗口末尾 reduceOnly GTC 不可用，停止报价并等待人工减仓')
-                await self.alerter.alert('reduceOnly GTC 被拒，窗口末尾无法安全被动减仓',key='窗口降仓不可用')
+                phase = '库存达到上限' if self.inventory_reducing else '窗口末尾'
+                await self.stop_orders(phase + ' reduceOnly GTC 不可用，停止报价并等待人工减仓')
+                await self.alerter.alert('reduceOnly GTC 被拒，' + phase + '无法安全被动减仓',key='窗口降仓不可用')
                 return
             if not position:
                 self.waiting=True
                 await self.stop_orders('窗口末尾已归零')
                 return
             side = 'sell' if position > 0 else 'buy'
-            quotes = tuple(Quote(q.side,q.price,min(q.quantity,abs(position)),True)
+            remaining = (abs(position)/self.rules.increment).to_integral_value(
+                rounding=ROUND_FLOOR)*self.rules.increment
+            # Ondo rejects reduceOnly GTC (reduce_only_invalid_tif, verified live 2026-11-05); unless verified,
+            # rest a plain post-only order capped at the current position so it cannot flip it.
+            quotes = tuple(Quote(q.side,q.price,min(q.quantity,remaining),cfg.reduce_only_gtc_verified)
                            for q in quotes if q.side == side)
         if cfg.mode == 'dry-run':
-            self.qualified = True
+            self.qualified = not reducing
             self.log({'事件':'拟报价','中心价':str(decision.center),
                 '中心价来源':decision.center_source,
                 **self.competition_metrics(),
@@ -910,7 +940,7 @@ class Maker:
         needs_change = not active or any(o.side not in desired or o.reduce_only != desired[o.side].reduce_only
             or abs(o.price/desired[o.side].price-1)*BPS > cfg.requote_bps for o in active)
         if not needs_change:
-            self.qualified = len(active) == len(quotes)
+            self.qualified = not reducing and len(active) == len(quotes)
             return
         if active:
             if self.last_requote is not None and now-self.last_requote < cfg.min_requote_interval_s:
@@ -946,7 +976,7 @@ class Maker:
         self.reject_count = 0
         self.last_quote = self.monotonic()
         self.last_requote = self.last_quote
-        self.qualified = True
+        self.qualified = not reducing
 
     async def flatten(self, center):
         try:
@@ -1118,6 +1148,8 @@ class Maker:
             reason = '账户同步屏障'
         elif self.monotonic() < self.backoff_until:
             reason = 'post-only 拒绝退避'
+        elif self.inventory_reducing:
+            reason = INVENTORY_REDUCE_REASON
         elif self.qualified and not self.waiting and not self.state.stopping:
             self.last_stop_reason = None
             self.record_quote_state(True)
