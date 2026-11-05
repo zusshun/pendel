@@ -41,3 +41,16 @@ class M28SweepThrottleTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class M28StopPriorityTests(unittest.TestCase):
+    def test_stop_verification_get_outranks_routine_reads(self):
+        from pendle.ondo_api import _Pending
+        def item(method, path, stop, seq, body=''):
+            return _Pending(method, path, body, None, stop, None, seq)
+        cancel_all = item('DELETE', '/v1/perps/orders?market=IBM-USD.P', True, 3)
+        verify = item('GET', '/v1/perps/orders?market=IBM-USD.P&status=open', True, 2)
+        routine = item('GET', '/v1/perps/positions', False, 1)
+        new_order = item('POST', '/v1/perps/orders', False, 0, body='{"reduceOnly":false}')
+        ranked = sorted((routine, verify, cancel_all, new_order), key=lambda e: (e.priority, e.sequence))
+        self.assertEqual(ranked, [cancel_all, verify, new_order, routine])

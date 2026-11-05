@@ -11,7 +11,7 @@ data_dir = "data/maker"
 # peer_heartbeat_paths = { "RDDT-USD.P" = "data/maker-rddt/default.RDDT-USD.P.heartbeat.json" }
 # peer_stale_s = 20.0 # Must exceed the watchdog check interval of 10 seconds.
 # peer_cancel_timeout_s = 15.0
-# stop_sweep_interval_s = 5.0 # Repeated verified-empty stops only; applies in sibling mode.
+# stop_sweep_interval_s = 5.0 # Repeated verified-empty stops only; applies in all modes, 0 disables.
 # Risk limits are static per instance: keep the sum of both instances' budgets affordable for the account.
 # Account-level funding is excluded from each instance's window ledger in sibling mode.
 # secret_file = "secrets/maker.json" # Optional; permissions must be 600. Defaults to environment variables.

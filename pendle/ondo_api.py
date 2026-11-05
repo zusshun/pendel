@@ -302,7 +302,8 @@ class _Pending:
             return 0 if path == ORDERS_PATH else 2
         if self.method == 'POST':
             return 1 if json.loads(self.body).get('reduceOnly') is True else 3
-        return 4
+        # Stop verification must not queue behind routine reconciliation; its timeout includes queueing.
+        return 1 if self.stop else 4
 
 
 class OndoAPI:
