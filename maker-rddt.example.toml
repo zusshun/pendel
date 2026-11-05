@@ -1,0 +1,102 @@
+# Copy to maker-rddt.toml first. This example is uncalibrated; use dry-run or sandbox only.
+# Amounts are in USD and offsets in bps; never put keys directly in this configuration.
+[maker]
+mode = "dry-run" # Switch to live only after sandbox and small-capital acceptance checks; also pass --live explicitly.
+market = "RDDT-USD.P"
+account = "default" # Keep this account identifier; each sibling instance needs its own data_dir and locks.
+data_dir = "data/maker-rddt"
+# Upgrade IBM and enable its reciprocal sibling settings before starting this instance.
+sibling_markets = ["IBM-USD.P"]
+heartbeat_path = "data/maker-rddt/default.RDDT-USD.P.heartbeat.json"
+peer_heartbeat_paths = { "IBM-USD.P" = "data/maker/default.IBM-USD.P.heartbeat.json" }
+peer_stale_s = 20.0 # Must exceed the watchdog check interval of 10 seconds.
+peer_cancel_timeout_s = 15.0
+stop_sweep_interval_s = 5.0 # Repeated verified-empty stops only; applies in sibling mode.
+# Risk limits are static per instance: keep the sum of both instances' budgets affordable for the account.
+# Account-level funding is excluded from each instance's window ledger in sibling mode.
+# secret_file = "secrets/maker.json" # Optional; permissions must be 600. Defaults to environment variables.
+# telegram_secret_file = "secrets/maker.json" # Optional; permissions must be 600. Defaults to environment variables.
+healthcheck_url = "" # Live mode requires an external HTTPS heartbeat URL or the explicit waiver below; keep URL access tokens private.
+healthcheck_waived = false # Defaults to false. Set true to allow live mode without an external heartbeat; startup and periodic summaries flag the risk.
+# With the waiver, server or network outages produce no alerts; the dead man's switch cancels orders but leaves positions unmanaged.
+quote_notional = "400" # Quote amount per side; hard limit of 800 in code.
+soft_cap_usd = "300"
+hard_cap_usd = "600"
+max_position_usd = "1200" # Hard limit of 1200 in code.
+max_account_exposure_usd = "1200" # Hard limit of 1500 in code.
+max_margin_ratio = "0.3" # Requires calibration; verify the exchange's marginRatio units in the sandbox.
+max_window_loss_usd = "25" # Requires calibration.
+emergency_flatten_loss_usd = "50" # Requires calibration.
+offset_bps = "12"
+skew_bps = "4"
+min_offset_bps = "8"
+band_bps = "25"
+band_margin_bps = "3" # Maximum offset = 25 - 3 = 22.
+requote_bps = "3"
+min_requote_interval_s = 10.0
+anchor_max_age_s = 600.0 # Requires calibration.
+anchor_ema_tau_s = 120.0 # Time constant for the short-term center EMA; keep tracking the actual center while quoting is paused.
+anchor_ema_alpha = "0.01" # Smooths only the optional external-reference basis; no longer controls the center EMA.
+max_anchor_drift_bps = "15" # Requires calibration.
+slow_anchor_tau_s = 3600.0 # Time constant for the actual center's ultra-slow EMA; keep updating during guard pauses and quote suspensions.
+# IBM reference observation at 2026-11-04 09:34 UTC: IBM rose from 248.95 to 251.77 in about an hour, a real move of roughly 110 bps.
+max_slow_drift_bps = "150" # Suspend quoting when the center deviates this far from the ultra-slow EMA; allows the observed market move above.
+max_mark_phase_drift_bps = "300" # Limits catastrophic cumulative drift during a continuous mark phase; M14 symmetric quotes are the main defense against self-reference.
+max_ext_drift_bps = "20" # Requires calibration; Binance is only an optional read-only guard.
+max_ext_age_s = 5.0 # Requires calibration.
+# IBM reference observation at 2026-11-04 08:4x UTC: outside US equity hours, IBM sent only 9 mark updates in 90 seconds, with a 14-second maximum gap.
+# markPricesPerps pushes only on price changes; source age at receipt had a median near 0 seconds and a maximum of 0.8 seconds. Silence does not imply staleness.
+mark_quiet_max_s = 60.0 # Allow up to 60 seconds since the last WS mark if this market's book is within max_book_age_s and the public connection is healthy.
+mark_rest_confirm_s = 15.0 # A successful public REST response for the market confirms mark validity independently for 15 seconds.
+mark_rest_poll_after_s = 10.0 # Start REST polling after 10 seconds without a WS mark to avoid false pauses from change-only updates.
+mark_rest_poll_interval_s = 10.0 # REST uses separate low-frequency throttling, unsigned requests, and a User-Agent; it consumes no trading rate-limit tokens.
+mark_source_max_age_s = 3600.0 # Use lastUpdatedTime only as a sanity check: reject and alert if over 1 hour old, over 2 seconds ahead, missing, or unparseable.
+discovery_quiet_max_s = 300.0 # REST has no price-discovery field; reuse the last explicit WS boolean for up to 300 seconds on a healthy connection. True or an unhealthy connection pauses quotes immediately.
+max_book_age_s = 5.0 # IBM order book update intervals observed on the server: P90 0.26 seconds, maximum 3.2 seconds (weekday, 2026-11-04).
+narrow_spread_bps = "20" # Switch midpoint to mark above this value; switch back at or below this value minus 5. Must exceed 5.
+source_min_dwell_s = 30.0 # Minimum seconds to retain a center source after each switch.
+max_mid_mark_bps = "8" # Suspend quoting if a third-party midpoint deviates this far from the mark price.
+max_spread_bps = "300" # Blocks only extreme markets with abnormally wide third-party spreads.
+jump_window_s = 5.0 # Requires calibration.
+jump_bps = "15" # Requires calibration.
+gate_interval_s = 300.0
+gate_comp_max_usd = "3500" # Requires calibration by rerunning backtests with live trading rules.
+gate_weight = "flat" # Supports flat or linear; must match the backtest reward_weight.
+cooldown_s = 60.0 # Requires calibration.
+stable_s = 30.0 # Requires calibration.
+reconcile_interval_s = 30.0
+quiet_s = 3.0 # Quiet period without new fills; resume after two matching position checks.
+request_timeout_s = 5.0
+cancel_confirm_timeout_s = 10.0 # Requires calibration.
+rate_per_second = 0.5 # Per API key; use separate keys for siblings, or set both instances to 0.5 with one shared key.
+deadman_timeout_s = 30
+deadman_ack_timeout_s = 15.0 # Maximum wait for each login and dead man's switch ACK.
+# Observed ACK: channel, message type, and nested timeout seconds must all match the configuration.
+deadman_ack_match = { type = "subscribed", channel = "cancelAllOrdersAfterPerps", "data.timeout_seconds" = 30 }
+mark_channel = "markPricesPerps" # Verify the channel name and message format in the sandbox; leave empty to disable.
+binance_symbol = "RDDTUSDT" # Independent external reference used only as a guard, not for pricing; an empty string disables it.
+binance_ws_url = "wss://fstream.binance.com/market/stream?streams="
+prod_rest_url = "https://api.ondoperps.xyz"
+prod_ws_url = "wss://api.ondoperps.xyz/ws"
+sandbox_rest_url = "https://api.ondoperps-sandbox.xyz" # Requires sandbox verification.
+sandbox_ws_url = "wss://api.ondoperps-sandbox.xyz/ws" # Requires sandbox verification.
+guards_calibrated = false # Set true only after calibration is complete and its rationale is documented.
+sandbox_verified = false # Set true only after all sandbox and pre-launch acceptance checks pass.
+reduce_only_gtc_verified = false # Requires sandbox verification; false uses a fallback capped by the position quantity.
+window_start_day = 5 # Monday=0, Saturday=5.
+window_start_time = "09:00"
+window_end_day = 0
+window_end_time = "05:00"
+timezone = "Asia/Shanghai"
+max_flatten_slippage_bps = "60"
+flatten_attempts = 3
+flatten_timeout_s = 60.0
+unknown_query_attempts = 3
+unknown_query_interval_s = 3.0
+unknown_timeout_s = 60.0
+strategy_interval_s = 1.0
+health_log_interval_s = 60.0
+alert_min_interval_s = 1800.0 # Minimum seconds between ordinary Telegram batches; urgent alerts remain immediate.
+summary_interval_s = 14400.0 # Seconds between concise Telegram summaries; defaults to four hours.
+log_level = "INFO" # DEBUG logs individual mark prices and public trades.
+# Read tick, baseIncrement, and minimum notional from market metadata; never place orders using fixed example values.

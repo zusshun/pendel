@@ -90,7 +90,7 @@ class M4StopTests(unittest.IsolatedAsyncioTestCase):
         cancellation_seen = []
 
         async def slow_http(method, url, **kwargs):
-            if kwargs.get('json', {}).get('text', '').startswith('做市告警'):
+            if kwargs.get('json', {}).get('text', '').startswith(f'[{MARKET}] 做市告警：'):
                 cancellation_seen.append(any(r.method == 'DELETE' for r in self.requests))
                 entered.set()
                 await release.wait()
@@ -167,7 +167,7 @@ class M4StopTests(unittest.IsolatedAsyncioTestCase):
         self.bot.alerter._last_alert_attempt = None
 
         async def http(method, url, **kwargs):
-            if kwargs.get('json', {}).get('text', '').startswith('做市告警'):
+            if kwargs.get('json', {}).get('text', '').startswith(f'[{MARKET}] 做市告警：'):
                 cancellation_before_alert.append(any(r.method == 'DELETE' for r in self.requests))
             return await original_http(method, url, **kwargs)
 

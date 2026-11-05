@@ -95,7 +95,7 @@ class RuntimeLoggingTests(unittest.IsolatedAsyncioTestCase):
                     code = await bot.run(live=mode == 'live')
                 self.assertEqual(code, 76)
                 self.assert_redacted_failure(capture, stderr.getvalue())
-                urgent = [text for text in sent if text.startswith('紧急告警：')]
+                urgent = [text for text in sent if text.startswith(f'[{MARKET}] 紧急告警：')]
                 self.assertTrue(any('运行失败：行情处理异常' in text for text in urgent), urgent)
                 self.assertNotIn('private-key', '\n'.join(urgent))
                 self.assertNotIn('private-secret', '\n'.join(urgent))
@@ -131,7 +131,7 @@ class RuntimeLoggingTests(unittest.IsolatedAsyncioTestCase):
             code = await bot.run()
         self.assertEqual(code, 76)
         self.assert_redacted_failure(capture, stderr.getvalue())
-        self.assertTrue(any(text.startswith('紧急告警：') and '运行失败：行情处理异常' in text
+        self.assertTrue(any(text.startswith(f'[{MARKET}] 紧急告警：') and '运行失败：行情处理异常' in text
                             for text in sent), sent)
 
     async def test_frequent_public_events_use_debug_and_health_stays_info(self):

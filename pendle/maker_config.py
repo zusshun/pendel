@@ -11,7 +11,7 @@ from types import MappingProxyType
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from .maker_risk import RiskLimits
+from .maker_risk import RiskLimits, Watchdog
 
 
 def _number(value, name, *, decimal=False):
@@ -38,7 +38,7 @@ def _url(value, name, scheme):
 
 @dataclass(frozen=True)
 class MakerSettings:
-    """The first version supports one market only; validate every safety threshold at construction."""
+    """Validate each single-market instance and every safety threshold at construction."""
 
     market: str = 'IBM-USD.P'
     mode: str = 'dry-run'
@@ -130,6 +130,12 @@ class MakerSettings:
     alert_min_interval_s: float = 1800.0
     summary_interval_s: float = 14400.0
     log_level: str = 'INFO'
+    sibling_markets: tuple[str, ...] = ()
+    heartbeat_path: Path | None = None
+    peer_heartbeat_paths: Mapping = field(default_factory=dict)
+    peer_stale_s: float = 20.0
+    peer_cancel_timeout_s: float = 15.0
+    stop_sweep_interval_s: float = 5.0
     _for_emergency: InitVar[bool] = False
 
     def __post_init__(self, _for_emergency):
@@ -140,6 +146,9 @@ class MakerSettings:
             if isinstance(setting.default, Decimal):
                 object.__setattr__(self, setting.name,
                                    _number(value, setting.name, decimal=True))
+            elif setting.name == 'stop_sweep_interval_s' and value == 0 and type(value) is not bool:
+                # Zero disables repeated-stop throttling (every stop sweeps immediately).
+                object.__setattr__(self, setting.name, 0.0)
             elif type(setting.default) is float:
                 object.__setattr__(self, setting.name, _number(value, setting.name))
             elif type(setting.default) is int and type(value) is not int:
@@ -166,6 +175,7 @@ class MakerSettings:
                 if not isinstance(value, (str, Path)) or not str(value):
                     raise ValueError(f'{name} 必须是有效文件路径')
                 object.__setattr__(self, name, Path(value))
+        self._validate_siblings()
         self.risk_limits
         self._validate_relations()
         self._validate_addresses()
@@ -194,6 +204,39 @@ class MakerSettings:
                 raise ValueError('live 要求守卫已标定，且已完成沙盒验收')
             if not self.healthcheck_url and not self.healthcheck_waived:
                 raise ValueError('live 必须配置外部心跳 healthcheck_url 或明确设置 healthcheck_waived=true')
+
+    def _validate_siblings(self):
+        if (not isinstance(self.sibling_markets, (tuple, list))
+                or any(not isinstance(market, str)
+                       or not re.fullmatch(r'[A-Z0-9]+-USD\.P', market)
+                       or market == self.market for market in self.sibling_markets)
+                or len(set(self.sibling_markets)) != len(self.sibling_markets)):
+            raise ValueError('sibling_markets 必须是不含本市场和重复项的有效市场列表')
+        object.__setattr__(self, 'sibling_markets', tuple(self.sibling_markets))
+        if not isinstance(self.peer_heartbeat_paths, Mapping):
+            raise ValueError('peer_heartbeat_paths 必须是市场到心跳文件路径的映射')
+        paths = {}
+        for market, path in self.peer_heartbeat_paths.items():
+            if (not isinstance(market, str)
+                    or not re.fullmatch(r'[A-Z0-9]+-USD\.P', market)):
+                raise ValueError('peer_heartbeat_paths 必须使用有效市场名')
+            paths[market] = self._heartbeat_file_path(path, 'peer_heartbeat_paths')
+        if any(market not in paths for market in self.sibling_markets):
+            raise ValueError('peer_heartbeat_paths 必须为每个兄弟市场配置心跳文件路径')
+        object.__setattr__(self, 'peer_heartbeat_paths', MappingProxyType(paths))
+        heartbeat = (self.data_dir / f'{self.account}.{self.market}.heartbeat.json'
+                     if self.heartbeat_path is None else self.heartbeat_path)
+        object.__setattr__(self, 'heartbeat_path',
+                           self._heartbeat_file_path(heartbeat, 'heartbeat_path'))
+        if self.peer_stale_s <= Watchdog.DEFAULT_CHECK_INTERVAL_S:
+            raise ValueError('peer_stale_s 必须大于 watchdog 检查间隔')
+
+    @staticmethod
+    def _heartbeat_file_path(value, name):
+        if (not isinstance(value, (str, Path)) or not str(value).strip()
+                or '\x00' in str(value)):
+            raise ValueError(f'{name} 必须是有效文件路径')
+        return Path(value)
 
     def _validate_relations(self):
         if not self.soft_cap_usd < self.hard_cap_usd:

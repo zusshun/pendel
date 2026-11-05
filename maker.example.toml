@@ -3,8 +3,17 @@
 [maker]
 mode = "dry-run" # Switch to live only after sandbox and small-capital acceptance checks; also pass --live explicitly.
 market = "IBM-USD.P"
-account = "default" # All commands for the same account must share this identifier, flock, and halt lock.
+account = "default" # Keep this account identifier; each sibling instance needs its own data_dir and locks.
 data_dir = "data/maker"
+# Configure both instances before starting a sibling; these keys are disabled by default.
+# sibling_markets = ["RDDT-USD.P"]
+# heartbeat_path = "data/maker/default.IBM-USD.P.heartbeat.json"
+# peer_heartbeat_paths = { "RDDT-USD.P" = "data/maker-rddt/default.RDDT-USD.P.heartbeat.json" }
+# peer_stale_s = 20.0 # Must exceed the watchdog check interval of 10 seconds.
+# peer_cancel_timeout_s = 15.0
+# stop_sweep_interval_s = 5.0 # Repeated verified-empty stops only; applies in sibling mode.
+# Risk limits are static per instance: keep the sum of both instances' budgets affordable for the account.
+# Account-level funding is excluded from each instance's window ledger in sibling mode.
 # secret_file = "secrets/maker.json" # Optional; permissions must be 600. Defaults to environment variables.
 # telegram_secret_file = "secrets/maker.json" # Optional; permissions must be 600. Defaults to environment variables.
 healthcheck_url = "" # Live mode requires an external HTTPS heartbeat URL or the explicit waiver below; keep URL access tokens private.
@@ -59,7 +68,7 @@ reconcile_interval_s = 30.0
 quiet_s = 3.0 # Quiet period without new fills; resume after two matching position checks.
 request_timeout_s = 5.0
 cancel_confirm_timeout_s = 10.0 # Requires calibration.
-rate_per_second = 1.0 # Conservatively assume one request per second per API key during public beta.
+rate_per_second = 1.0 # Per API key; use separate keys for siblings, or set both instances to 0.5 with one shared key.
 deadman_timeout_s = 30
 deadman_ack_timeout_s = 15.0 # Maximum wait for each login and dead man's switch ACK.
 # Observed ACK: channel, message type, and nested timeout seconds must all match the configuration.

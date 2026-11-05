@@ -540,9 +540,11 @@ class HaltController:
 class Watchdog:
     """Renew only on critical-task heartbeats and private pongs; after failure, this instance can never resume sending."""
 
+    DEFAULT_CHECK_INTERVAL_S = 10
+
     def __init__(self, *, gate, stop, ping, alert, reconciler_interval_s,
                  strategy_stale_s=15, order_manager_stale_s=15, private_stale_s=15,
-                 check_interval_s=10, ping_timeout_s=5, monotonic=time.monotonic,
+                 check_interval_s=DEFAULT_CHECK_INTERVAL_S, ping_timeout_s=5, monotonic=time.monotonic,
                  sleep=asyncio.sleep, required_tasks=None):
         self.gate, self.stop, self.ping, self.alert = gate, stop, ping, alert
         self.monotonic, self.sleep = monotonic, sleep

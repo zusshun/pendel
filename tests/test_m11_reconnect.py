@@ -10,6 +10,7 @@ from pendle.alerts import Alerter, TelegramCredentials
 from pendle.maker import Maker
 from pendle.maker_config import MakerSettings
 from pendle.ondo_api import Credentials
+from test_maker import MARKET
 from test_maker_e2e import Clock, Exchange, Files
 
 
@@ -133,7 +134,7 @@ class ReconnectTests(unittest.IsolatedAsyncioTestCase):
             error=secret_error, mode='sandbox')
         warnings = [text for level, text in capture.rows if level == logging.WARNING]
         self.assertEqual(len(warnings), 6)
-        urgent = [text for text in sent if text.startswith('紧急告警：')]
+        urgent = [text for text in sent if text.startswith(f'[{MARKET}] 紧急告警：')]
         self.assertEqual(len(urgent), 1)
         for text in warnings + urgent:
             self.assertIn('HTTP 429', text)
@@ -144,7 +145,7 @@ class ReconnectTests(unittest.IsolatedAsyncioTestCase):
     async def test_dry_run_never_sends_urgent_connection_alerts(self):
         _, _, _, sent, _ = await self.run_failures('private', 8,
             error=OSError('HTTP 429'), mode='dry-run')
-        self.assertFalse([text for text in sent if text.startswith('紧急告警：')])
+        self.assertFalse([text for text in sent if text.startswith(f'[{MARKET}] 紧急告警：')])
 
     async def test_clean_stream_end_is_a_logged_failure_for_every_source(self):
         for kind in ('public', 'private', 'binance'):
@@ -199,7 +200,7 @@ class ReconnectTests(unittest.IsolatedAsyncioTestCase):
                      asyncio.create_task(bot.binance_feed())]
             task_sources.update(zip(tasks, ('公开', '私有', '币安')))
             await asyncio.wait_for(asyncio.gather(*tasks), 2)
-        urgent = [text for text in sent if text.startswith('紧急告警：')]
+        urgent = [text for text in sent if text.startswith(f'[{MARKET}] 紧急告警：')]
         self.assertEqual(len(urgent), 1)
         self.assertTrue(all(source in urgent[0] for source in ('公开', '私有', '币安')))
 
@@ -302,7 +303,8 @@ class ReconnectTests(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(all(row['来源'] == source for row in warnings))
                 self.assertTrue(all('HTTP 429 关闭失败' in row['异常消息'] for row in closes))
                 self.assertTrue(all(row['异常类型'] == 'RuntimeError' for row in closes))
-                self.assertEqual(len([text for text in sent if text.startswith('紧急告警：')]), 1)
+                self.assertEqual(len([text for text in sent
+                    if text.startswith(f'[{MARKET}] 紧急告警：')]), 1)
                 for row in closes:
                     self.assertNotIn('private-key', row['异常消息'])
                     self.assertNotIn('a' * 64, row['异常消息'])

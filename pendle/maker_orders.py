@@ -431,14 +431,16 @@ class OrderManager:
                  reject=_warn_rejection, run_id='maker',
                  request_timeout_s=5, unknown_query_attempts=3,
                  unknown_query_interval_s=3, cancel_confirm_timeout_s=10, quiet_s=3,
-                 unknown_timeout_s=60):
+                 unknown_timeout_s=60, stop_sweep_interval_s=0):
         try:
             durations = [float(number(value)) for value in
                          (request_timeout_s, cancel_confirm_timeout_s, unknown_query_interval_s, quiet_s, unknown_timeout_s)]
+            stop_sweep_interval_s = float(number(stop_sweep_interval_s))
         except ValueError as exc:
             raise OrderStateError('订单管理器安全参数无效') from exc
         if (not callable(risk_check) or type(unknown_query_attempts) is not int
                 or not 1 <= unknown_query_attempts <= 3 or durations[-1] > 60
+                or not math.isfinite(stop_sweep_interval_s) or stop_sweep_interval_s < 0
                 or any(not math.isfinite(value) or value <= 0 for value in durations)):
             raise OrderStateError('订单管理器安全参数无效')
         self.state, self.api, self.risk_check = state, api, risk_check
@@ -458,6 +460,9 @@ class OrderManager:
         self._stop_cleanup_task = None
         self._local_stop_confirmed = False
         self._halting = False
+        self.stop_sweep_interval_s = stop_sweep_interval_s
+        self._stop_confirmed_at = None
+        self._stop_confirmed_revisions = None
 
     def _require_emergency(self, market, candidate=None):
         gate = getattr(self.api, 'gate', None)
@@ -899,12 +904,32 @@ class OrderManager:
         self._local_stop_confirmed = True
         return True
 
-    async def stop(self, reason='停止'):
+    def _reuse_stop_confirmation(self, was_stopping):
+        """Reuse a completed sweep only while all target-market zero evidence remains valid."""
+        gate = getattr(self.api, 'gate', None)
+        return (self.stop_sweep_interval_s > 0 and was_stopping
+                and self._stop_confirmed_at is not None
+                and self.monotonic() - self._stop_confirmed_at < self.stop_sweep_interval_s
+                and self._stop_task is not None and self._stop_task.done()
+                and not self._stop_task.cancelled() and self._stop_task.exception() is None
+                and self._stop_task.result() is True
+                and self._stop_confirmed_revisions == self.state.market_revisions
+                and not self.state.active_orders()
+                and not any(not task.done() for task in self.pending.values())
+                and not getattr(self.api, 'in_flight_writes', 0)
+                and (gate is None or gate.is_open))
+
+    async def stop(self, reason='停止', *, force=False):
+        was_stopping = self.state.stopping
         self._local_stop_confirmed = False
         self.state.stopping = True
         for market in self.state.markets:
             self.state.modes[market] = 'STOPPING'
         if (self._stop_cleanup_task is None or self._stop_cleanup_task.done()):
+            if not force and self._reuse_stop_confirmation(was_stopping):
+                return True
+            self._stop_confirmed_at = None
+            self._stop_confirmed_revisions = None
             self._stop_task = asyncio.create_task(self._stop(reason))
             self._stop_cleanup_task = asyncio.create_task(
                 self._finish_stop(self._stop_task, reason))
@@ -1001,18 +1026,30 @@ class OrderManager:
                                 confirmed[market] = self.state.market_revisions[market]
                                 break
                         except Exception as exc:
+                            # Record why a stop attempt failed; silent retries made production STOP_FAILED undiagnosable.
+                            logging.getLogger('pendle.maker').warning(
+                                '停止流程第 %d 次撤单核零失败：市场=%s 异常=%s status=%s error_code=%s',
+                                attempts[market], market, type(exc).__name__, getattr(exc, 'status', None),
+                                getattr(exc, 'code', None))
                             if getattr(exc, 'category', None) == 'halt':
                                 scheduled_halt = self._halt_after_stop_error(exc)
                                 return False
                     all_empty = all_empty and empty
                 # Allow at most three cancel-all attempts per market; reuse the remaining budget if later market waits or final alerts invalidate earlier evidence.
                 if not all_empty:
+                    logging.getLogger('pendle.maker').warning(
+                        '停止流程三次撤单核零均未成功：本地活动单=%d 在途写=%s',
+                        len(self.state.active_orders()), bool(any(not task.done() for task in self.pending.values())
+                                                         or getattr(self.api, 'in_flight_writes', 0)))
                     return False
                 if not all(zero_evidence_valid(market) for market in self.state.markets):
                     continue
                 await self.alert('停止流程已核实挂单为零')
                 # Do not await between the final check and successful return; late events during alerts could leave open orders.
                 if all(zero_evidence_valid(market) for market in self.state.markets):
+                    if self.stop_sweep_interval_s > 0:
+                        self._stop_confirmed_at = self.monotonic()
+                        self._stop_confirmed_revisions = dict(self.state.market_revisions)
                     return True
         finally:
             if gate is not None and not gate.is_open and not scheduled_halt:
@@ -1060,6 +1097,8 @@ class OrderManager:
         self.state.stopping = False
         self._stop_task = None
         self._local_stop_confirmed = False
+        self._stop_confirmed_at = None
+        self._stop_confirmed_revisions = None
         for market in self.state.markets:
             self.state.begin_sync(market, '守卫恢复前重新对账')
         return True

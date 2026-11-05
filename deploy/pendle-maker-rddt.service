@@ -1,0 +1,26 @@
+[Unit]
+Description=Ondo 单市场实盘做市机器人
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=600
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/pendle
+EnvironmentFile=/home/ubuntu/pendle/secrets/maker.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/ubuntu/pendle/.venv/bin/python -m pendle maker --config /home/ubuntu/pendle/maker-rddt.toml --live
+Restart=on-failure
+RestartSec=10
+RestartPreventExitStatus=76
+TimeoutStopSec=90
+KillSignal=SIGTERM
+UMask=0077
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

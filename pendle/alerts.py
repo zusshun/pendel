@@ -48,13 +48,14 @@ class Alerter:
 
     def __init__(self, credentials=None, *, http=None, monotonic=time.monotonic,
                  healthcheck_url=None, logger=None, alert_min_interval_s=1800.0,
-                 summary_interval_s=14400.0):
+                 summary_interval_s=14400.0, market=''):
         self._credentials = credentials
         self._http, self._monotonic = http, monotonic
         self._healthcheck_url = healthcheck_url
         self.logger = logger or logging.getLogger(__name__)
         self.alert_min_interval_s = alert_min_interval_s
         self.summary_interval_s = summary_interval_s
+        self.market = market
         self._last_alert_attempt = None
         self._pending = {}
         self._ordinary_task = None
@@ -94,6 +95,8 @@ class Alerter:
     async def _telegram(self, text):
         if self._credentials is None:
             return False
+        if self.market:
+            text = f'[{self.market}] ' + str(text)
         url = 'https://api.telegram.org/bot' + self._credentials.bot_token + '/sendMessage'
         success = await self._request('POST', url, payload={
             'chat_id': self._credentials.chat_id, 'text': self._redact(text)[:4096]})

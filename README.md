@@ -220,7 +220,7 @@ set -a; . secrets/maker.env; set +a
 .venv/bin/python -m pendle maker --config maker.toml --live
 ```
 
-Stop the foreground process with SIGTERM / Ctrl-C. It blocks new orders, handles in-flight orders, cancels all orders in the market, verifies zero open orders, then disarms the dead man's switch. The live service must run as the non-root user `ubuntu`. `deploy/pendle-maker.service` uses `/home/ubuntu/pendle` and explicitly passes `--live` in `ExecStart`; install it only after production acceptance checks are complete:
+Stop the foreground process with SIGTERM / Ctrl-C. It blocks new orders, handles in-flight orders, cancels all orders in the market, verifies zero open orders, then disarms the dead man's switch. With `sibling_markets` configured, it keeps the account-wide dead man's switch armed. The live service must run as the non-root user `ubuntu`. `deploy/pendle-maker.service` uses `/home/ubuntu/pendle` and explicitly passes `--live` in `ExecStart`; install it only after production acceptance checks are complete:
 
 ```bash
 sudo cp deploy/pendle-maker.service /etc/systemd/system/pendle-maker.service
@@ -229,6 +229,10 @@ sudo systemctl enable --now pendle-maker
 sudo systemctl status pendle-maker
 sudo systemctl stop pendle-maker
 ```
+
+To run RDDT on the same account, upgrade IBM first and enable the commented sibling keys in `maker.toml`, pointing at RDDT's heartbeat. Copy `maker-rddt.example.toml` to `maker-rddt.toml`, complete calibration and live acceptance, and confirm the two heartbeat mappings match. Keep IBM's `data_dir="data/maker"` and RDDT's `data_dir="data/maker-rddt"` separate so their instance locks, halt locks, and loss ledgers cannot overwrite each other. Install `deploy/pendle-maker-rddt.service` using the same commands above with `pendle-maker-rddt` as the service name, then start RDDT only after IBM runs the upgraded configuration. Use each instance's original configuration for `maker-cancel-all` and `--reset-halt` (for RDDT, `--config maker-rddt.toml`).
+
+Sibling limits are static per instance: keep the sums of both `max_position_usd` budgets and both `max_account_exposure_usd` budgets within the account's capacity; margin ratio remains account-wide. Sibling mode excludes account-level funding from window loss ledgers. REST limits apply per API key: use separate trading keys, or set `rate_per_second=0.5` in both configurations when sharing one key. To select separate keys, configure `secret_file` and matching instance key environments for emergency commands; the supplied service units share `secrets/maker.env` by default. A stale peer is cancelled and checked for zero orders; failed peer cancellation halts the surviving instance and stops its pings while keeping the dead man's switch armed.
 
 Logs go to both standard error and the configured `data_dir/maker.log`, with health status recorded every minute. Watch the terminal in foreground mode or use `sudo journalctl -u pendle-maker -f` for systemd. Startup failures report sanitized reasons. Positions, window P&L, halt state, and other persistent records are stored in the configured `data_dir`, defaulting to `/home/ubuntu/pendle/data/maker/`. Do not delete account locks, halt locks, or window P&L files while the service is running, or bypass existing locks with a new account alias.
 
@@ -251,6 +255,7 @@ All settings belong in the `[maker]` table; unknown fields are rejected. Amounts
 | Purpose | Settings |
 |---|---|
 | Mode, account, and files | `mode`, `market`, `account`, `data_dir`, `secret_file`, `telegram_secret_file`, `healthcheck_url` |
+| Sibling instances and heartbeat guards | `sibling_markets`, `heartbeat_path`, `peer_heartbeat_paths`, `peer_stale_s`, `peer_cancel_timeout_s`, `stop_sweep_interval_s` |
 | Amounts and risk | `quote_notional`, `soft_cap_usd`, `hard_cap_usd`, `max_position_usd`, `max_account_exposure_usd`, `max_margin_ratio`, `max_window_loss_usd`, `emergency_flatten_loss_usd` |
 | Quoting and requoting | `offset_bps`, `skew_bps`, `min_offset_bps`, `band_bps`, `band_margin_bps`, `requote_bps`, `min_requote_interval_s` |
 | Reference prices and guards | `anchor_max_age_s`, `anchor_ema_alpha`, `max_anchor_drift_bps`, `max_ext_drift_bps`, `max_ext_age_s`, `max_mark_age_s`, `max_book_age_s`, `max_spread_bps`, `jump_window_s`, `jump_bps`, `cooldown_s`, `stable_s` |

@@ -59,7 +59,7 @@ class M7HealthcheckLiveTests(unittest.IsolatedAsyncioTestCase):
 
         async def http(method, url, *, json=None, timeout=10):
             self.sent.append((method, json, self.bot.started))
-            if json and json['text'].startswith('紧急告警：'):
+            if json and json['text'].startswith(f'[{settings.market}] 紧急告警：'):
                 self.clock.now += self.urgent_delay
             return HttpResponse(200, {'ok': self.telegram_ok})
 
@@ -102,7 +102,7 @@ class M7HealthcheckLiveTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(bot.started)
         warnings = [(payload['text'], started) for method, payload, started in self.sent
                     if method == 'POST' and WARNING in payload['text']]
-        self.assertEqual(warnings, [('紧急告警：'+WARNING, True)])
+        self.assertEqual(warnings, [(f'[{bot.settings.market}] 紧急告警：'+WARNING, True)])
 
     async def test_failed_live_startup_does_not_send_waiver_warning(self):
         bot = self.make_bot(healthcheck_waived=True)
@@ -127,7 +127,8 @@ class M7HealthcheckLiveTests(unittest.IsolatedAsyncioTestCase):
         for _ in range(2):
             self.clock.now += 14400
             await self.health_once()
-        summaries = [text for text in self.messages() if text.startswith('做市摘要')]
+        summaries = [text for text in self.messages()
+                     if text.startswith(f'[{self.bot.settings.market}] 做市摘要：')]
         self.assertEqual(len(summaries), 2)
         for text in summaries:
             self.assertIn(WARNING, text)
@@ -140,7 +141,8 @@ class M7HealthcheckLiveTests(unittest.IsolatedAsyncioTestCase):
         self.clock.now += 14400
         bot.pause_seconds[reason] += 1
         await self.health_once()
-        summaries = [text for text in self.messages() if text.startswith('做市摘要')]
+        summaries = [text for text in self.messages()
+                     if text.startswith(f'[{self.bot.settings.market}] 做市摘要：')]
         self.assertEqual(len(summaries), 1)
         self.assertTrue(WARNING in summaries[0], '摘要指标较长时也必须保留完整的心跳风险提醒')
 

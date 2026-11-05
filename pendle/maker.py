@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import math
+import os
 import signal
 import sys
 import time
@@ -376,6 +377,7 @@ class Maker:
                  monotonic=time.monotonic, clock=time.time, sleep=asyncio.sleep,
                  connect=None, logger=None, public_http=None):
         self.settings, self.api, self.alerter = settings, api, alerter
+        self.alerter.market = settings.market
         self.files, self.monotonic, self.clock, self.sleep = files or DurableFiles(), monotonic, clock, sleep
         self.connect, self.logger, self.rules = connect, logger, rules
         self.public_http = public_http
@@ -423,6 +425,9 @@ class Maker:
         self.passive_reduce_unavailable=False
         self._shutdown = False
         self._stop_failed = False
+        self._heartbeat_ready = False
+        self._peer_status = {}
+        self._peer_alert_tasks = set()
         self._order_alerts = deque()
         self.exit_code, self.started = 0, False
         self.halt_result, self.emergency_attempted, self.emergency_active = None,False,False
@@ -434,7 +439,8 @@ class Maker:
             request_timeout_s=settings.request_timeout_s,
             unknown_query_attempts=settings.unknown_query_attempts, unknown_timeout_s=settings.unknown_timeout_s,
             unknown_query_interval_s=settings.unknown_query_interval_s,
-            cancel_confirm_timeout_s=settings.cancel_confirm_timeout_s, quiet_s=settings.quiet_s)
+            cancel_confirm_timeout_s=settings.cancel_confirm_timeout_s, quiet_s=settings.quiet_s,
+            stop_sweep_interval_s=settings.stop_sweep_interval_s)
         self.halt = HaltController(settings.halt_path, gate=self.gate, stop=self.stop_orders,
             alert=self.urgent_alert, files=self.files, clock=clock,monitor_after_halt=True)
         self.guard = Guard(settings.cooldown_s, settings.stable_s,
@@ -550,8 +556,11 @@ class Maker:
         if cfg.mode == 'dry-run':
             raise OrdersBlocked('dry-run 禁止全部写请求')
         if any(row['market'] != cfg.market and number(row['quantity']) != 0
+               and row['market'] not in cfg.sibling_markets
                for row in state.account_positions):
             raise RiskRejected('单市场账户存在其他市场持仓')
+        if cfg.sibling_markets and not self._heartbeat_ready:
+            raise OrdersBlocked('等待看门狗首次健康心跳，禁止新增订单')
         if (not self.gate.is_open or self.book is None or self.book_seen is None
                 or not 0 <= now-self.book_seen <= cfg.max_book_age_s):
             raise OrdersBlocked('行情过期或发送闸门关闭')
@@ -660,7 +669,10 @@ class Maker:
             stopped = self.manager.confirm_local_stop()
             self.log({'事件':'已确认停止','模式':'dry-run','原因':reason})
             return stopped
-        stopped = await self.manager.stop(reason)
+        if self.settings.sibling_markets and self._shutdown:
+            stopped = await self.manager.stop(reason, force=True)
+        else:
+            stopped = await self.manager.stop(reason)
         await self._flush_order_alerts()
         return stopped
 
@@ -685,6 +697,7 @@ class Maker:
             else:
                 ok=await self.manager.reconcile(cfg.market)
             if any(row['market'] != cfg.market and number(row['quantity']) != 0
+                   and row['market'] not in cfg.sibling_markets
                    for row in self.state.account_positions):
                 await self.trip_halt('单市场账户存在其他市场持仓')
                 return False
@@ -735,6 +748,10 @@ class Maker:
         self.market_data_wait_reason = None
         self.watchdog.beat('Strategy')
         if self.stop_event.is_set():
+            return
+        if cfg.sibling_markets and cfg.mode != 'dry-run' and not self._heartbeat_ready:
+            self.market_data_wait_reason = '等待看门狗首次健康心跳'
+            self.waiting, self.qualified = True, False
             return
         window = window_state(cfg,datetime.fromtimestamp(self.clock(),ZoneInfo(cfg.timezone)))
 
@@ -1168,7 +1185,8 @@ class Maker:
         self._shutdown = True
         try:
             stopped = await self.stop_orders('收到退出信号，安全停止')
-            if stopped and self.private_ws is not None and self.gate.is_open and self.settings.mode != 'dry-run':
+            if (stopped and self.private_ws is not None and self.gate.is_open
+                    and self.settings.mode != 'dry-run' and not self.settings.sibling_markets):
                 if not await self.disable_deadman():
                     self.exit_code = self.exit_code or 76
             if not stopped:
@@ -1619,7 +1637,8 @@ class Maker:
                 if any(not isinstance(row, dict) or not isinstance(row.get('market'), str)
                        or not row['market'] for row in rows):
                     raise ValueError
-                rows = [normalize_position(row) for row in rows]
+                rows = [normalize_position(row) for row in rows
+                        if row['market'] not in self.settings.sibling_markets]
             except (ApiError, KeyError, TypeError, ValueError, OverflowError):
                 await self._private_input_failure(channel+' 缺少关键字段或字段值无效')
                 return
@@ -1879,6 +1898,8 @@ class Maker:
 
     def record_funding(self):
         """Use the prior cumulative funding in the persistent ledger as the baseline for idempotent recovery after a post-write crash."""
+        if self.settings.sibling_markets:
+            return
         total=self.state.balances.get('totalFundingPayments')
         if total is None:
             return
@@ -1979,6 +2000,90 @@ class Maker:
                 self.last_halt_alert=self.monotonic()
             await self.sleep(1)
 
+    def write_heartbeat(self):
+        """Publish atomically; only the healthy watchdog loop calls this in production."""
+        self.files.write_json(self.settings.heartbeat_path, {
+            'market': self.settings.market, 'pid': os.getpid(), 'time_ms': int(self.clock()*1000)})
+        self._heartbeat_ready = True
+
+    def _peer_is_fresh(self, market):
+        try:
+            row = json.loads(self.files.read_text(self.settings.peer_heartbeat_paths[market]))
+            return (isinstance(row, dict) and row.get('market') == market
+                    and type(row.get('pid')) is int and row['pid'] > 0
+                    and type(row.get('time_ms')) in (int, float)
+                    and math.isfinite(row['time_ms'])
+                    and 0 <= self.clock()*1000-row['time_ms'] <= self.settings.peer_stale_s*1000)
+        except (OSError, ValueError, TypeError, KeyError, OverflowError):
+            return False
+
+    async def _cancel_peer(self, market):
+        """Peer orders bypass AccountState and OrderManager completely."""
+        await self.api.cancel_all(market, stop=True)
+        rows = await self.api.get_open_orders(market, stop=True)
+        if not isinstance(rows, list) or rows:
+            raise OrdersBlocked('对端市场挂单未核实为零')
+
+    async def _halt_for_peer(self, market):
+        # Close the gate before cleanup so no ping can renew the account-wide dead man's switch.
+        self.gate.close()
+        await self.trip_halt('对端市场 '+market+' 代撤核零超时，停止续期并保留死人开关')
+        self.request_stop()
+        return False
+
+    def _alert_stale_peer(self, market):
+        """Slow Telegram HTTP must never hold up cancellation or the peer failure deadline."""
+        task = asyncio.create_task(self.urgent_alert('对端市场 '+market+' 心跳过期，立即代撤并核实挂单'))
+        self._peer_alert_tasks.add(task)
+
+        def finished(completed):
+            self._peer_alert_tasks.discard(completed)
+            if not completed.cancelled() and completed.exception() is not None:
+                self.log({'事件': '对端失联紧急告警失败', '市场': market}, level=logging.WARNING)
+
+        task.add_done_callback(finished)
+
+    async def check_peer_once(self, market):
+        """Bound each stale episode's unconfirmed sweep and retry no more than once per five seconds."""
+        if self._peer_is_fresh(market):
+            if self._peer_status.pop(market, None) is not None:
+                self.log({'事件': '对端心跳恢复', '市场': market})
+            return True
+        now = self.monotonic()
+        status = self._peer_status.get(market)
+        if status is None:
+            status = self._peer_status[market] = {'attempt_at': None, 'unconfirmed_at': now}
+            self._alert_stale_peer(market)
+        unconfirmed = status['unconfirmed_at']
+        if unconfirmed is not None and self.monotonic()-unconfirmed >= self.settings.peer_cancel_timeout_s:
+            return await self._halt_for_peer(market)
+        if status['attempt_at'] is not None and now-status['attempt_at'] < 5:
+            return unconfirmed is None
+        status['attempt_at'] = now
+        if unconfirmed is None:
+            status['unconfirmed_at'] = self.monotonic()
+        remaining = self.settings.peer_cancel_timeout_s-(self.monotonic()-status['unconfirmed_at'])
+        if remaining <= 0:
+            return await self._halt_for_peer(market)
+        try:
+            await asyncio.wait_for(self._cancel_peer(market), timeout=remaining)
+        except asyncio.TimeoutError:
+            return await self._halt_for_peer(market)
+        except Exception as error:
+            self.log({'事件': '对端代撤核零失败', '市场': market, '异常类型': type(error).__name__},
+                     level=logging.WARNING)
+            if self.monotonic()-status['unconfirmed_at'] >= self.settings.peer_cancel_timeout_s:
+                return await self._halt_for_peer(market)
+            return False
+        status['unconfirmed_at'] = None
+        return True
+
+    async def peer_guard_loop(self, market):
+        """Keep slow peer REST requests independent of watchdog renewals and other peers."""
+        while self.gate.is_open and not self.stop_event.is_set():
+            await self.check_peer_once(market)
+            await self.sleep(1)
+
     async def watchdog_loop(self):
         while self.gate.is_open and not self.stop_event.is_set():
             await self.sleep(1)
@@ -2014,6 +2119,9 @@ class Maker:
                     self.request_stop()
                     return
                 self._last_renewal = self.monotonic()
+            if (self.settings.sibling_markets and self.gate.is_open and not self.stop_event.is_set()
+                    and not self.watchdog.tripped and not self.watchdog.unhealthy_tasks()):
+                self.write_heartbeat()
 
     async def run(self, *, live=False):
         tasks,installed=[],[]
@@ -2031,6 +2139,8 @@ class Maker:
                 jobs.extend((self.feed(True),self.reconcile_loop(),self.watchdog_loop()))
                 if self.settings.mode!='dry-run':
                     jobs.append(self.order_loop())
+                    if self.settings.sibling_markets:
+                        jobs.extend(self.peer_guard_loop(market) for market in self.settings.sibling_markets)
             if self.settings.binance_symbol:
                 jobs.append(self.binance_feed())
             tasks=[asyncio.create_task(job) for job in jobs]
@@ -2087,6 +2197,9 @@ class Maker:
                 if hasattr(self.alerter, 'flush_urgent'):
                     await self.alerter.flush_urgent(timeout_s=10)
             finally:
+                for task in tuple(self._peer_alert_tasks):
+                    task.cancel()
+                await asyncio.gather(*self._peer_alert_tasks, return_exceptions=True)
                 for sig in installed:
                     asyncio.get_running_loop().remove_signal_handler(sig)
 

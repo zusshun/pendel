@@ -41,8 +41,9 @@ class M3WiringTests(unittest.IsolatedAsyncioTestCase):
         self.requests, self.http_calls, self.connections = [], [], []
         self.remote, self.cancel_failure, self.zero_failure = {}, False, False
         self.position = D(0)
+        # Wiring tests exercise every sweep; throttled sweeps are covered separately.
         self.settings = replace(MakerSettings(), mode='sandbox', quiet_s=.001,
-                                rate_per_second=1000.)
+                                rate_per_second=1000., stop_sweep_interval_s=0.)
         self.ws = WS()
 
         async def network(request):

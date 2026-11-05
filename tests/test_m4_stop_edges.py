@@ -78,7 +78,7 @@ class M4StopEdgesTests(unittest.IsolatedAsyncioTestCase):
     def assert_cancel_before_ordinary_http(self):
         deletes = [i for i, event in enumerate(self.events) if event[0] == 'DELETE']
         ordinary = [i for i, event in enumerate(self.events)
-                    if event[0] == 'HTTP' and event[1].startswith('做市告警：')]
+                    if event[0] == 'HTTP' and event[1].startswith(f'[{MARKET}] 做市告警：')]
         self.assertTrue(deletes, '必须实际发出撤单请求')
         self.assertTrue(ordinary, '本场景必须实际运行普通告警 HTTP')
         self.assertLess(deletes[0], ordinary[0], '首个撤单必须先于本轮普通告警 HTTP')

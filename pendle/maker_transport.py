@@ -204,7 +204,7 @@ def _build_api(settings, dependencies):
         environment='sandbox' if settings.mode == 'sandbox' else 'prod',
         gate=_ReadOnlyGate() if settings.mode == 'dry-run' else dependencies.get('gate'),
         rate=settings.rate_per_second,
-        timeout_s=settings.request_timeout_s, **options)
+        timeout_s=settings.request_timeout_s, sibling_markets=settings.sibling_markets, **options)
     api.base_url, api.ws_url = settings.rest_url.rstrip('/'), settings.ws_url
     return api
 

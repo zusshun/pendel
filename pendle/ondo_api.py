@@ -310,7 +310,7 @@ class OndoAPI:
 
     def __init__(self, credentials, *, transport, environment='sandbox', gate=None,
                  rate=1, timeout_s=5, clock=time.time, monotonic=time.monotonic, sleep=asyncio.sleep,
-                 ntp_check=None):
+                 ntp_check=None, sibling_markets=()):
         if environment not in ENVIRONMENTS:
             raise ValueError('交易环境只能为 prod 或 sandbox')
         if isinstance(rate, bool) or not math.isfinite(rate) or rate <= 0:
@@ -321,6 +321,7 @@ class OndoAPI:
         self._active = set()
         self._transmissions = {}
         self.credentials, self.transport = credentials, transport
+        self.sibling_markets = tuple(sibling_markets)
         self.base_url, self.ws_url = ENVIRONMENTS[environment]
         self.gate = gate or SendGate()
         self.rate, self.clock, self.monotonic, self.sleep = rate, clock, monotonic, sleep
@@ -617,6 +618,10 @@ class OndoAPI:
                            for key in ('hasMore', 'truncated'))
                     or 'complete' in payload and payload['complete'] is not True):
                 raise _format_error(payload)
+            if self.sibling_markets and path in (OPEN_ORDERS_PATH, FILLS_PATH):
+                # Retain requested peer orders so peer cancellation cannot falsely prove zero.
+                rows = [row for row in rows if row.get('market') == params['market']
+                        or row.get('market') not in self.sibling_markets]
             if path == OPEN_ORDERS_PATH and any(
                     row.get('market') != params['market']
                     or not row.get('orderId') for row in rows):
@@ -637,6 +642,9 @@ class OndoAPI:
         rows = self._result(payload)
         if not isinstance(rows, list):
             raise _format_error(payload)
+        if self.sibling_markets:
+            rows = [row for row in rows if not isinstance(row, dict)
+                    or row.get('market') not in self.sibling_markets]
         return [normalize_position(row, status=payload.status, code=_error_code(payload)) for row in rows]
 
     async def get_balances(self):
