@@ -1165,8 +1165,12 @@ class Maker:
         """Keep ordinary trading locked; emergency access gets a single budget of three attempts within sixty seconds."""
         cfg,now=self.settings,self.monotonic()
         position=self.state.positions[cfg.market]
+        # A halt must not strand inventory: once the position has been held for max_hold_s, flatten it
+        # through the same guarded emergency path as the loss trigger (user decision 2026-11-06).
+        held_too_long=(cfg.max_hold_s is not None and self.position_started_at is not None
+                       and now-self.position_started_at>=cfg.max_hold_s)
         if (not position or self.emergency_attempted or self.ledger is None
-                or not self.ledger.exceeds(cfg.emergency_flatten_loss_usd)):
+                or not (held_too_long or self.ledger.exceeds(cfg.emergency_flatten_loss_usd))):
             return
         safe=(self.halt_result is not None and self.halt_result.persisted and self.halt_result.stopped
             and self.gate.is_open and self.gate.trading_halted and not self.watchdog.unhealthy_tasks()
@@ -1178,7 +1182,8 @@ class Maker:
             and not getattr(self.api,'in_flight_writes',0)
             and (cfg.mode!='live' or getattr(self.api,'clock_verified',False)))
         if not safe:
-            await self.alerter.alert('紧急亏损达到阈值，但无法确认安全减仓前置条件',key='紧急减仓封锁')
+            await self.alerter.alert(('熔断后持仓超时' if held_too_long else '紧急亏损达到阈值')
+                                     +'，但无法确认安全减仓前置条件',key='紧急减仓封锁')
             return
         self.emergency_attempted,self.emergency_active=True,True
         deadline=now+cfg.flatten_timeout_s

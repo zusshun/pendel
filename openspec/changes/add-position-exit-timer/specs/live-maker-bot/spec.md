@@ -32,3 +32,10 @@
 #### Scenario: 未配置时行为不变
 - **WHEN** 三个参数都未配置
 - **THEN** 行为与本变更之前完全一致
+
+### Requirement: 熔断后持仓超时平仓
+配置了 `max_hold_s` 时，系统 SHALL 在熔断监控状态下，只要本市场持仓已持有达到 `max_hold_s`，就通过现有紧急 IOC 流程平仓，与亏损是否达到 `emergency_flatten_loss_usd` 无关。紧急 IOC 流程的所有安全前置条件保持不变。
+
+#### Scenario: 熔断后仍有持仓
+- **WHEN** 实例已熔断，持仓非零，且持有时长达到 `max_hold_s`
+- **THEN** 在安全前置条件都满足时发送 reduceOnly IOC 平仓；条件不满足时发告警，并在下一轮继续检查

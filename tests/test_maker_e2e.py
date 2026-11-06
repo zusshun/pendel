@@ -422,6 +422,45 @@ class MakerE2E(unittest.IsolatedAsyncioTestCase):
         await self.bot.tick()
         self.assertEqual(len([c for c in self.exchange.calls if c[0]=='place']),count)
 
+    async def test_halted_position_held_past_max_hold_flattens_without_loss_trigger(self):
+        """Production 2026-11-06: a halt left 1.63 IBM long unattended for ten hours."""
+        self.bot.settings = replace(self.settings, max_hold_s=600.0)
+        self.bot.engine.settings = self.bot.settings
+        self.bot.state.positions[MARKET]=self.exchange.position=D(1)
+        self.bot.engine.evaluate(self.bot.book,self.bot.state,self.bot.rules,now=self.clock())
+        self.bot.track_position()
+        await self.bot.trip_halt('持仓离场前对账失败')
+        self.assertTrue(await self.bot.reconcile_once())
+        for name in ('Strategy','OrderManager','Reconciler'):
+            self.bot.watchdog.beat(name)
+        self.bot.watchdog.pong()
+        await self.bot.tick()
+        self.assertFalse([c for c in self.exchange.calls if c[0]=='place'])
+        self.clock.now += 600
+        self.refresh()
+        self.assertTrue(await self.bot.reconcile_once())
+        for name in ('Strategy','OrderManager','Reconciler'):
+            self.bot.watchdog.beat(name)
+        self.bot.watchdog.pong()
+        await self.bot.tick()
+        rows=[c[1] for c in self.exchange.calls if c[0]=='place']
+        self.assertTrue(rows)
+        self.assertTrue(all(r['reduceOnly'] and r['timeInForce']=='IOC' for r in rows))
+
+    async def test_halted_position_without_max_hold_keeps_loss_only_trigger(self):
+        self.bot.state.positions[MARKET]=self.exchange.position=D(1)
+        self.bot.engine.evaluate(self.bot.book,self.bot.state,self.bot.rules,now=self.clock())
+        self.bot.track_position()
+        await self.bot.trip_halt('亏损熔断')
+        self.clock.now += 3600
+        self.refresh()
+        self.assertTrue(await self.bot.reconcile_once())
+        for name in ('Strategy','OrderManager','Reconciler'):
+            self.bot.watchdog.beat(name)
+        self.bot.watchdog.pong()
+        await self.bot.tick()
+        self.assertFalse([c for c in self.exchange.calls if c[0]=='place'])
+
     async def test_halt_monitor_does_not_bypass_watchdog(self):
         self.bot.state.positions[MARKET]=self.exchange.position=D(1)
         self.bot.ledger.record('loss',realized_pnl='-60')
