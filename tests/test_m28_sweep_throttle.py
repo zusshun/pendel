@@ -54,3 +54,21 @@ class M28StopPriorityTests(unittest.TestCase):
         new_order = item('POST', '/v1/perps/orders', False, 0, body='{"reduceOnly":false}')
         ranked = sorted((routine, verify, cancel_all, new_order), key=lambda e: (e.priority, e.sequence))
         self.assertEqual(ranked, [cancel_all, verify, new_order, routine])
+
+
+class M30WatchdogExitCodeTests(unittest.IsolatedAsyncioTestCase):
+    asyncSetUp = wiring.M3WiringTests.asyncSetUp
+    asyncTearDown = wiring.M3WiringTests.asyncTearDown
+    drive = wiring.M3WiringTests.drive
+    ready = wiring.M3WiringTests.ready
+    wall = wiring.M3WiringTests.wall
+    publish = wiring.M3WiringTests.publish
+
+    async def test_watchdog_exit_without_halt_is_temporary(self):
+        self.assertIsNone(self.bot.halt_result)
+        self.assertEqual(self.bot.watchdog_exit_code(), 75)
+
+    async def test_watchdog_exit_after_halt_keeps_halt_code(self):
+        await self.ready()
+        await self.drive(self.bot.trip_halt('测试熔断'))
+        self.assertEqual(self.bot.watchdog_exit_code(), 76)

@@ -71,7 +71,8 @@ class M8PrivateTests(unittest.IsolatedAsyncioTestCase):
                 await self.assert_invalid({'channel': 'ordersPerps', 'data': [row]})
 
     async def test_missing_private_fill_fields_sync_and_alert(self):
-        for key in self.fill():
+        # clientOrderId is optional: fills of orders placed outside the bot (web app) do not carry it.
+        for key in (key for key in self.fill() if key != 'clientOrderId'):
             row = self.fill()
             del row[key]
             with self.subTest(key=key):

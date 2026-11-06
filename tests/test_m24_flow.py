@@ -143,7 +143,8 @@ class M24FlowTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_missing_ws_fill_required_fields_warn_sync_without_halt(self):
         await self.ready()
-        for field in self.documented_fill():
+        # clientOrderId is optional: fills of orders placed outside the bot (web app) do not carry it.
+        for field in (field for field in self.documented_fill() if field != 'clientOrderId'):
             with self.subTest(field=field):
                 self.bot.state.modes[MARKET] = 'RUNNING'
                 self.bot.reconcile_event.clear()
@@ -157,6 +158,24 @@ class M24FlowTests(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(self.bot.reconcile_event.is_set())
                 self.assertFalse(self.bot.state.fills)
                 self.assert_not_halted()
+
+
+    async def test_web_app_fill_without_client_order_id_is_booked_and_reconcile_succeeds(self):
+        """Production 2026-11-05: a manual web-app close broke every REST reconcile until the watchdog exited."""
+        from pendle.ondo_api import normalize_fill
+        row = {'id': '32146c2acd02f1549c9123e5def51791', 'orderId': '5UTVTPI73IUIFZVASTJ4RRC5JO2APLF5',
+               'market': MARKET, 'price': '255.01', 'size': '2.15', 'side': 'sell', 'direction': 'closeLong',
+               'filledCost': '548.2715', 'fee': '0.137068', 'feeRebate': '0.006853', 'pnl': '0.828844',
+               'time': '2026-11-05T08:17:28.509096489Z', 'isMaker': False}
+        fill = normalize_fill(row, MARKET)
+        self.assertIsNone(fill['client_order_id'])
+        self.assertEqual(fill['fill_id'], row['id'])
+        with self.assertRaises(Exception):
+            normalize_fill({**row, 'clientOrderId': 7}, MARKET)
+        await self.ready()
+        await self.bot.on_private({'type': 'update', 'channel': 'fillsPerps', 'data': [row]})
+        self.assertIn(row['id'], self.bot.state.fills)
+        self.assert_not_halted()
 
 
 if __name__ == '__main__':

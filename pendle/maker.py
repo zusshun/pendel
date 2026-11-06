@@ -494,7 +494,13 @@ class Maker:
         while self._order_alerts:
             await self.alerter.alert(self._order_alerts.popleft())
 
+    def watchdog_exit_code(self):
+        """Watchdog exits without a persisted halt are temporary (75, systemd restarts); halts keep 76."""
+        return 76 if self.halt_result is not None or self.halt.exit_code is not None else 75
+
     async def urgent_alert(self, reason):
+        # Keep a local record: Telegram is not readable from the server when diagnosing an exit.
+        self.log({'事件': '紧急告警', '原因': str(reason)}, level=logging.WARNING)
         return await self.alerter.alert(reason, urgent=True)
 
     async def record_order_rejection(self, reason):
@@ -746,6 +752,8 @@ class Maker:
                 await self.alerter.alert('交易所保证金率不可用，使用保守本地估算',key='保证金估算')
             return ok
         except ApiError as exc:
+            self.log({'事件': '对账接口失败', '异常类型': type(exc).__name__, 'status': getattr(exc, 'status', None),
+                      'error_code': getattr(exc, 'code', None), '类别': exc.category}, level=logging.WARNING)
             if exc.category == 'halt':
                 await self.trip_halt('对账接口返回立即熔断错误')
             else:
@@ -2223,19 +2231,19 @@ class Maker:
                         self._last_renewal = self.monotonic()
                 continue
             if not await self.watchdog.check_once(renew=False):
-                self.exit_code=76
+                self.exit_code=self.watchdog_exit_code()
                 self.request_stop()
                 return
             if (not self.state.deadman_acked and self.ack_wait_started is not None
                     and self.monotonic()-self.ack_wait_started >= self.settings.deadman_ack_timeout_s):
                 await self.watchdog._trip(self.ack_wait_phase+' ACK 超时，停止交易')
-                self.exit_code=76
+                self.exit_code=self.watchdog_exit_code()
                 self.request_stop()
                 return
             if self.state.deadman_acked and (not hasattr(self, '_last_renewal')
                     or self.monotonic()-self._last_renewal >= self.watchdog.check_interval_s):
                 if not await self.watchdog.check_once():
-                    self.exit_code=76
+                    self.exit_code=self.watchdog_exit_code()
                     self.request_stop()
                     return
                 self._last_renewal = self.monotonic()

@@ -741,12 +741,14 @@ def normalize_fill(row, market=None, *, status=0, code=None):
         if not isinstance(row, dict):
             raise ValueError
         result = {'fill_id': row['id'], 'market': row.get('market', market),
-                  'order_id': row['orderId'], 'client_order_id': row['clientOrderId'],
+                  # Fills of orders placed outside the bot (e.g. the web app) carry no clientOrderId.
+                  'order_id': row['orderId'], 'client_order_id': row.get('clientOrderId') or None,
                   'price': row['price'], 'quantity': row['size'], 'side': row['side'],
                   'fee': row['fee'], 'realized_pnl': row['pnl'],
                   'time_ms': exchange_time_ms(row['time'], status=status, code=code), 'is_maker': row['isMaker']}
         if (any(not isinstance(result[key], str) or not result[key]
-                for key in ('fill_id', 'market', 'order_id', 'client_order_id'))
+                for key in ('fill_id', 'market', 'order_id'))
+                or result['client_order_id'] is not None and not isinstance(result['client_order_id'], str)
                 or result['side'] not in ('buy', 'sell') or type(result['is_maker']) is not bool
                 or number(result['quantity']) <= 0 or number(result['price']) <= 0):
             raise ValueError
