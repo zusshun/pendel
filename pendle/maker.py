@@ -445,6 +445,8 @@ class Maker:
         self._position_sign = 0
         self._position_entry_pending = False
         self.position_exit_reason = None
+        self.position_exit_started_at = None
+        self.exit_stall_alerted = False
         self.exit_retry_at = 0
         self.exit_failure_alerted = False
         self._shutdown = False
@@ -1006,6 +1008,8 @@ class Maker:
         if sign != self._position_sign:
             self.position_started_at = self.monotonic() if sign else None
             self.position_exit_reason = None
+            self.position_exit_started_at = None
+            self.exit_stall_alerted = False
             self.exit_retry_at = 0
             self.exit_failure_alerted = False
             self._position_sign = sign
@@ -1037,6 +1041,8 @@ class Maker:
             return True
         if self.position_exit_reason is None:
             self.position_exit_reason = reason
+            self.position_exit_started_at = now
+            self.exit_stall_alerted = False
             self.record_quote_state(False, reason, event=True)
             self.pause_seconds[reason] += 0
         self.waiting, self.qualified = True, False
@@ -1048,6 +1054,13 @@ class Maker:
                 await self.trip_halt('持仓离场撤单无法确认')
             return True
         result = await self.flatten(center, target=D(0))
+        if result is None:
+            # Cleanup or reconciliation not settled yet: retry shortly without hammering REST.
+            self.exit_retry_at = self.monotonic()+3
+            if (self.position_exit_started_at is not None and not self.exit_stall_alerted
+                    and self.monotonic()-self.position_exit_started_at >= 120):
+                self.exit_stall_alerted = True
+                await self.urgent_alert(reason+' 已超过 2 分钟仍未完成，持续重试中')
         if result is False and self.halt.exit_code is None and not self.gate.trading_halted:
             self.exit_retry_at = self.monotonic()+30
             if not self.exit_failure_alerted:
@@ -1078,7 +1091,10 @@ class Maker:
             await self.trip_halt('硬上限撤单无法确认')
             return False
         if not await self.reconcile_once():
-            await self.trip_halt('持仓离场前对账失败' if exiting else '硬上限减仓前对账失败')
+            if exiting:
+                # A not-yet-quiet reconcile right after cancelling is routine; retry instead of halting (2026-11-06).
+                return None
+            await self.trip_halt('硬上限减仓前对账失败')
             return False
         for _ in range(1 if exiting else cfg.flatten_attempts):
             if self.monotonic() >= deadline or not self.gate.is_open:
@@ -1109,8 +1125,7 @@ class Maker:
                 break
             if not await self.reconcile_once():
                 if exiting:
-                    await self.trip_halt('持仓离场后对账失败')
-                    return False
+                    return None
                 break
         if (self.state.positions[cfg.market] == 0 if exiting
                 else abs(self.state.positions[cfg.market])*center < cfg.soft_cap_usd):

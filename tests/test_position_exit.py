@@ -183,6 +183,7 @@ class PositionExitTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(self.bot.halt.exit_code)
         self.assertFalse(self.iocs())
         self.exchange.ioc_sizes = [D(1)]
+        self.clock.now += 3.1  # short retry backoff
         self.refresh()
         await self.bot.tick()
         self.assertEqual(len(self.iocs()), 1)
@@ -265,13 +266,39 @@ class PositionExitTests(unittest.IsolatedAsyncioTestCase):
         await self.bot.tick()
         self.assertFalse(self.iocs())
 
-    async def test_exit_reconcile_failure_still_halts(self):
+    async def test_exit_reconcile_failure_retries_without_halt(self):
+        """Production 2026-11-06: a not-yet-quiet reconcile right after cancelling halted both bots with inventory."""
         await self.position('1')
         self.clock.now += 600
         self.refresh()
         with patch.object(self.bot, 'reconcile_once', return_value=False):
             await self.bot.tick()
-        self.assertIsNotNone(self.bot.halt.exit_code)
+        self.assertIsNone(self.bot.halt.exit_code)
+        self.assertFalse(self.iocs())
+        self.assertEqual(self.bot.position_exit_reason, '持仓超时离场')
+        self.exchange.ioc_sizes = [D(1)]
+        self.clock.now += 3.1
+        self.refresh()
+        await self.bot.tick()
+        self.assertEqual(len(self.iocs()), 1)
+        self.assertIsNone(self.bot.halt.exit_code)
+
+    async def test_exit_stalled_two_minutes_sends_one_urgent_alert(self):
+        await self.position('1')
+        self.clock.now += 600
+        sent = []
+        original = self.bot.urgent_alert
+        async def capture(reason):
+            sent.append(reason)
+            return await original(reason)
+        self.bot.urgent_alert = capture
+        with patch.object(self.bot, 'reconcile_once', return_value=False):
+            for _ in range(45):
+                self.refresh()
+                await self.bot.tick()
+                self.clock.now += 3.1
+        self.assertIsNone(self.bot.halt.exit_code)
+        self.assertEqual(sum('已超过 2 分钟仍未完成' in reason for reason in sent), 1)
         self.assertFalse(self.iocs())
 
     async def test_flip_does_not_use_previous_episode_entry(self):
