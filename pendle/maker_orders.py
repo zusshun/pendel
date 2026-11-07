@@ -111,6 +111,7 @@ class AccountState:
         self.modes = {market: 'SYNCING' for market in self.markets}
         self.sync_reasons = {}
         self.revision = 0
+        self.balance_revision = 0
         # Verification of zero open orders tracks only target-market orders and positions, unaffected by balances or other markets.
         self.market_revisions = {market: 0 for market in self.markets}
         self.monotonic = monotonic
@@ -229,7 +230,9 @@ class AccountState:
             self.balance_ms = at
         self.balance_source = source
         if changed:
-            self.revision += 1
+            # Valuation fields (unrealized PnL, margin) change every ~80 ms while a position is open; they must
+            # not invalidate order/position snapshots, so balances keep their own revision (2026-11-07).
+            self.balance_revision += 1
         return True
 
     def apply_fill(self, fill_id, market, side, quantity, time_ms, *,
@@ -828,6 +831,7 @@ class OrderManager:
             if not isinstance(rows, list):
                 raise OrderStateError('挂单快照必须为完整列表')
             if self.state.revision != before_orders:
+                logging.getLogger('pendle.maker').warning('对账未通过：市场=%s 原因=读取挂单快照期间私有状态发生变化', market)
                 self.state.begin_sync(market, '读取挂单快照期间私有状态发生变化')
                 return False
             listed = set()
@@ -847,6 +851,7 @@ class OrderManager:
             before_positions = self.state.revision
             positions = await self._call(self.api.get_positions())
             if self.state.revision != before_positions:
+                logging.getLogger('pendle.maker').warning('对账未通过：市场=%s 原因=读取持仓快照期间私有状态发生变化', market)
                 self.state.begin_sync(market, '读取持仓快照期间私有状态发生变化')
                 return False
             self.state.account_positions = [dict(row) for row in positions]
@@ -872,20 +877,30 @@ class OrderManager:
                     self.state._position_event_contents.pop(market, None)
                 self.state.position_details[market] = dict(pos)
             before_balance = self.state.revision
+            before_balance_values = self.state.balance_revision
             balance = await self._call(self.api.get_balances())
             if self.state.revision != before_balance:
+                logging.getLogger('pendle.maker').warning('对账未通过：市场=%s 原因=读取余额快照期间私有状态发生变化', market)
                 self.state.begin_sync(market, '读取余额快照期间私有状态发生变化')
                 return False
-            self.state.apply_balance_snapshot(balance)
+            # A private balance push during the read is newer than this untimed REST snapshot; keep it.
+            if self.state.balance_revision == before_balance_values:
+                self.state.apply_balance_snapshot(balance)
             unresolved = any(order.status in (OrderStatus.INTENT, OrderStatus.SENT,
                              OrderStatus.UNKNOWN, OrderStatus.CANCEL_SENT)
                              for order in self.state.active_orders(market))
             invalid_monitor = monitor_halted and (not gate.is_open or not gate.trading_halted)
-            if (not position_confirmed or invalid_monitor
-                    or self.state.stopping and not monitor_halted
-                    or not self.state.deadman_acked or unresolved
-                    or self.state.has_unaccounted_fills(market)
-                    or generation != self.state.generations[market]):
+            failed = [name for name, bad in (
+                ('持仓未确认', not position_confirmed), ('熔断监控通道无效', invalid_monitor),
+                ('停止中', self.state.stopping and not monitor_halted),
+                ('死人开关未确认', not self.state.deadman_acked), ('存在未决订单', unresolved),
+                ('存在未入账成交', self.state.has_unaccounted_fills(market)),
+                ('同步代数变化', generation != self.state.generations[market])) if bad]
+            if failed:
+                # Record why reconciliation did not settle; silent False results hid a stuck exit (2026-11-07).
+                logging.getLogger('pendle.maker').warning(
+                    '对账未通过：市场=%s 原因=%s 本地持仓=%s 快照持仓=%s', market, '、'.join(failed),
+                    self.state.positions[market], pos['quantity'])
                 return False
             self.state.modes[market] = 'HALTED' if monitor_halted else 'RUNNING'
             return True

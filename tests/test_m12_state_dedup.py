@@ -72,16 +72,16 @@ class M12StateDedupTests(unittest.TestCase):
                     confirmed['time_ms'] = 200
                 self.assertTrue(state.apply_balance_snapshot(first, source='ws'))
                 self.assertTrue(state.apply_balance_snapshot(confirmed))
-                revision = state.revision
+                revision = state.balance_revision
 
                 latest = dict(balance, time_ms=300) if timed else dict(balance)
                 self.assertTrue(state.apply_balance_snapshot(latest, source='ws'))
                 self.assertEqual(state.balances['available'], '300')
-                self.assertEqual(state.revision, revision + 1)
+                self.assertEqual(state.balance_revision, revision + 1)
 
                 repeated = dict(balance, time_ms=400) if timed else dict(balance)
                 self.assertTrue(state.apply_balance_snapshot(repeated, source='ws'))
-                self.assertEqual(state.revision, revision + 1)
+                self.assertEqual(state.balance_revision, revision + 1)
 
 
 class M12PositionReconcileTests(unittest.IsolatedAsyncioTestCase):

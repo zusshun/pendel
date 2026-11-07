@@ -66,9 +66,11 @@ class M11SnapshotDedupTests(unittest.TestCase):
     def test_changed_live_balance_increments_revision(self):
         balance = normalize_balance(SAMPLES['balance_update']['data'])
         self.state.apply_balance_snapshot(balance, source='ws')
-        revision = self.state.revision
+        # Balance changes have their own revision; they must not invalidate order/position snapshots.
+        revision, global_revision = self.state.balance_revision, self.state.revision
         self.state.apply_balance_snapshot(dict(balance, available='299'), source='ws')
-        self.assertEqual(self.state.revision, revision + 1)
+        self.assertEqual(self.state.balance_revision, revision + 1)
+        self.assertEqual(self.state.revision, global_revision)
 
 
 class M11PositionBurstTests(unittest.IsolatedAsyncioTestCase):

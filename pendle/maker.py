@@ -1082,15 +1082,20 @@ class Maker:
             return False
         exiting = target == 0
         deadline = self.monotonic()+cfg.flatten_timeout_s
+        # Flattening runs inside the strategy tick; report liveness between its steps so a legitimately
+        # slow cancel/reconcile/IOC sequence is not mistaken for a stuck strategy (2026-11-07).
+        self.watchdog.beat('Strategy')
         if not await self.stop_orders('持仓离场，先撤单再 IOC 平仓' if exiting else '达到硬上限，先撤单再 IOC 减仓'):
             await self.trip_halt('持仓离场撤单无法确认' if exiting else '硬上限撤单无法确认')
             return False
+        self.watchdog.beat('Strategy')
         if not self.manager.prepare_resume():
             if exiting:
                 return None
             await self.trip_halt('硬上限撤单无法确认')
             return False
         if not await self.reconcile_once():
+            self.watchdog.beat('Strategy')
             if exiting:
                 # A not-yet-quiet reconcile right after cancelling is routine; retry instead of halting (2026-11-06).
                 return None
@@ -1115,6 +1120,7 @@ class Maker:
                 rounding=ROUND_CEILING if side == 'sell' else ROUND_FLOOR)*self.rules.tick
             order = self.manager.create_intent(cfg.market,side,quantity,price,
                 reduce_only=True,time_in_force='IOC',post_only=False)
+            self.watchdog.beat('Strategy')
             await self.manager.submit(order)
             if order.status == OrderStatus.UNKNOWN:
                 await self.manager.resolve_unknown(order)
@@ -2299,7 +2305,8 @@ class Maker:
                     for task in done:
                         task.result()
                     if not self.gate.is_open:
-                        self.exit_code=76
+                        # A watchdog trip closes the gate before its loop sets the exit code; keep it restartable.
+                        self.exit_code=(self.watchdog_exit_code() if self.watchdog.tripped else 76)
                     else:
                         raise RuntimeError('关键任务意外结束')
             finally:
