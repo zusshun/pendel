@@ -299,6 +299,38 @@ class M15MarkValidityTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.bot.engine.discovery_is_fresh(self.clock()))
         self.assertTrue(self.decision().eligible)
 
+    async def test_rest_discovery_boolean_refreshes_quiet_discovery_state(self):
+        """Weekend marks are quiet; the REST map carries inPriceDiscovery and must keep the state fresh."""
+        await self.ready()
+        self.rest_extra = {'inPriceDiscovery': False}
+        self.clock.now += 290
+        self.healthy_book()
+        await self.poll()
+        self.assertEqual(self.bot.engine.price_discovery_seen, self.clock())
+        self.clock.now += 200
+        self.healthy_book()
+        self.assertTrue(self.bot.engine.discovery_is_fresh(self.clock()))
+        self.rest_extra = {'inPriceDiscovery': True}
+        self.clock.now += 11
+        self.healthy_book()
+        await self.poll()
+        self.assertIs(self.bot.engine.in_price_discovery, True)
+        result = self.decision()
+        self.assertFalse(result.eligible)
+        self.assertIn('价格发现', result.reason)
+
+    async def test_quote_in_price_discovery_flag_allows_quotes_in_discovery(self):
+        from dataclasses import replace
+        self.bot.settings = self.bot.engine.settings = replace(self.bot.settings, quote_in_price_discovery=True)
+        await self.ready()
+        self.rest_extra = {'inPriceDiscovery': True}
+        self.clock.now += 11
+        self.healthy_book()
+        await self.poll()
+        self.assertIs(self.bot.engine.in_price_discovery, True)
+        self.assertEqual(self.bot.guard.state, 'RUNNING')
+        self.assertTrue(self.decision().eligible)
+
     async def test_source_time_is_sanity_checked_to_one_hour_instead_of_ten_seconds(self):
         self.healthy_book()
         for age in (11, 1800, 3600):

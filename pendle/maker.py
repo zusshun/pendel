@@ -265,7 +265,8 @@ class QuoteEngine:
             return observed
         center, source, spread, bids, asks = observed
         center_values = {'center_source': source}
-        if self.in_price_discovery:
+        # Weekends put most equity perps into price discovery (2026-11-07); quoting there is opt-in.
+        if self.in_price_discovery and not cfg.quote_in_price_discovery:
             return Decision(False, '市场处于价格发现，双侧停止报价', center, **center_values)
         fresh_mark = True
         # Continuous mark phases only guard against catastrophic cumulative drift; pauses do not reset them. M14 symmetric quotes are the main defense against self-reference.
@@ -1555,12 +1556,21 @@ class Maker:
                 raise ValueError('公开 REST 标记价格或预言机价格无效')
             conflict = self._mark_conflict_reason(source_times[0], mark)
             now = self.monotonic()
-            # REST has no inPriceDiscovery; price confirmation must never extend WS state or clear true.
             self.engine.mark = (mark, now)
             self.engine.oracle = (oracle, now) if oracle is not None else None
             self.engine.mark_source_times = source_times
             self.engine.mark_accepted_source_time = source_times[0]
             self.engine.mark_rest_seen = now
+            # The REST map does carry an explicit inPriceDiscovery boolean (verified live 2026-11-07). Use it to
+            # refresh the discovery state when marks are quiet (weekends); absent or non-boolean values keep WS state.
+            discovery = row.get('inPriceDiscovery')
+            if type(discovery) is bool:
+                self.engine.discovery_source_times = tuple(source_times)
+                self.engine.in_price_discovery = discovery
+                self.engine.price_discovery_seen = now
+                self.engine.price_discovery_invalid = False
+                if discovery and not cfg.quote_in_price_discovery:
+                    await self.guard.trigger('市场处于价格发现，双侧停止报价')
             self.log({'事件': 'REST 标记价格确认', '市场': cfg.market,
                       'markPrice': str(mark)}, level=logging.DEBUG)
             if conflict:
@@ -1676,7 +1686,7 @@ class Maker:
                 self.log({'事件':'标记价格','市场':cfg.market,'markPrice':str(mark),
                           'oraclePrice':str(oracle) if oracle is not None else None,
                           'inPriceDiscovery':discovery}, level=logging.DEBUG)
-                if discovery:
+                if discovery and not cfg.quote_in_price_discovery:
                     await self.guard.trigger('市场处于价格发现，双侧停止报价')
                 if conflict:
                     if self.logger is not None:

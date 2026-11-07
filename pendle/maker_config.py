@@ -120,6 +120,7 @@ class MakerSettings:
     window_end_time: str = '05:00'
     timezone: str = 'Asia/Shanghai'
     max_flatten_slippage_bps: Decimal = Decimal('60')
+    quote_in_price_discovery: bool = False
     max_hold_s: float | None = None
     stop_loss_bps: Decimal | None = None
     exit_reduce_offset_bps: Decimal | None = None
